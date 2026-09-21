@@ -63,6 +63,22 @@ node adapters/claude/install-hooks.mjs      # 幂等合并 hooks 到 ~/.claude/s
 2. **消费**:用 `bh digest --sess=<该会话 id>` 拿摘要(已在内部完成匹配、预算、合并、已读标记);能在 `UserPromptSubmit`/`idle` 之类时机注入就注入,不能就让人手动跑。
 3. **订阅**:`bh sub add git config --sess=<该会话 id>`。所有 harness 共用同一份订阅数据(`~/.ai-brief-hub/subs/`)。
 
+
+### 会话变多时的节流:拥挤度感知合并(为什么会话数上升不等于 token 上升)
+
+同一条简报会被所有订阅了宽标签(如 `git`)的会话各投一次。brief-hub 维护 **拥挤度索引**(`index/fanout.json`,订阅变化时刷新):当一条简报的标签有 **>= 4 个订阅者** 时(`fanoutBatchK`),`auto` 订阅自动改为 **按小时合并**——一小时一条摘要,展开前 3 条标题,其余只给计数。**错误**(`sev:err`)与**直接点名**(`sess:<会话名>`)的简报始终立即投递。
+
+实测:8 个订阅者、20 条简报按每分钟一条到达(会话每分钟轮询一次):
+
+| 模式 | 注入消息数 | 注入 token |
+|---|---|---|
+| `immediate`(旧行为) | 152 | 3120 |
+| `auto`(fanout 8 → hourly) | **8** | **160** |
+
+**不丢任何东西**:每条简报都留在集散地、保持未读、可用 `bh list --unread` / `bh read <id>` 查看,只是"打扰的时机"变了。
+
+另外两处 IO 优化:`bh list` / `/hub list` 只读文件尾部(`listTailBytes`,64KB)而非整文件;预算按**实际渲染出的摘要**计费,不再按命中条目逐条累加。
+
 ## 安装
 
 ```bash

@@ -63,7 +63,7 @@ test("planDelivery:预算用尽时只给未展开计数", () => {
 	assert.ok(plan.items.length >= 1, "至少投一条");
 	assert.ok(plan.suppressed >= 1, "余下被压下");
 	const digest = renderDigest(plan);
-	assert.match(digest, /另有 \d+ 条低优先简报未展开/, "摘要里给出计数");
+	assert.match(digest, /另有 \d+ 条未展开/, "摘要里给出计数");
 });
 
 test("planDelivery:静默时段与关闭状态不投递", () => {
@@ -85,4 +85,30 @@ test("inQuietHours:支持跨零点", () => {
 test("estimateTokens:标题级投递成本很低(单条 < 40 token)", () => {
 	const cost = estimateTokens(brief({ title: "config-ai 推送 3 个提交" }));
 	assert.ok(cost > 0 && cost < 40, `实际 ${cost}`);
+});
+
+test("fanout 节流:订阅者多时 auto 模式改为按小时合并,错误与点名仍立即", () => {
+	const now = Date.now();
+	const baseSub = sub(); // mode 未声明 = auto
+	const briefs = Array.from({ length: 10 }, (_, i) => brief({ id: `b-${i}`, key: `k${i}`, ts: now - i * 1000 }));
+	// 拥挤(fanout 8 ≥ 阈值 4):首次投递应合并成一条摘要(只展开前 3 条)
+	const crowded = planDelivery({ incoming: briefs, sub: baseSub, state: state(), now, fanout: 8 });
+	assert.equal(crowded.items.length, 10, "10 条都在计划里(不丢)");
+	const digest = renderDigest(crowded);
+	assert.ok(digest.split("\n").length <= 6, `摘要行数应被压缩(实际 ${digest.split("\n").length} 行)`);
+	assert.match(digest, /另有 \d+ 条未展开/);
+
+	// 未到点(刚投递过):本轮不注入任何内容,条目保留为未读
+	const justDelivered = { ...state(), lastDeliveryAt: now - 60_000 };
+	const throttled = planDelivery({ incoming: briefs, sub: baseSub, state: justDelivered, now, fanout: 8 });
+	assert.equal(throttled.items.length, 0);
+	assert.equal(throttled.estimatedTokens, 0);
+	assert.equal(throttled.matchedIds.length, 10, "仍记录命中,保留未读");
+	assert.match(throttled.reason ?? "", /合并投递未到点/);
+
+	// 紧急(错误/点名)不受节流影响
+	const errors = briefs.map((b, i) => ({ ...b, severity: i === 0 ? "err" : "info", tags: [...b.tags, i === 0 ? "sev:err" : "x"] }));
+	const urgentPlan = planDelivery({ incoming: errors, sub: baseSub, state: justDelivered, now, fanout: 8 });
+	assert.equal(urgentPlan.items.length, 1, "只立即投紧急项");
+	assert.ok(urgentPlan.estimatedTokens > 0);
 });

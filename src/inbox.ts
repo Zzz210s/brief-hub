@@ -8,8 +8,9 @@
  */
 
 import { DEFAULTS, type SubState, type Subscription } from "./schema.ts";
-import { listBriefFiles, markConsumed, readAfter, readConfig, readState, readSubscription, todayFile, writeState } from "./store.ts";
+import { listBriefFiles, markConsumed, readAfter, readConfig, readFanoutIndex, readState, readSubscription, todayFile, writeState } from "./store.ts";
 import { planDelivery, renderDigest, type DeliveryPlan } from "./match.ts";
+import { maxFanoutFor } from "./store.ts";
 
 export interface PollOptions {
 	now?: number;
@@ -65,11 +66,14 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 		return { sess, reason: "首次运行:已对齐游标(不投递历史)", digest: "", scanned: 0, delivered: 0, state: next };
 	}
 
+	const fanoutIndex = await readFanoutIndex();
+	const fanout = maxFanoutFor([...new Set(incoming.flatMap((brief) => brief.tags ?? []))], fanoutIndex);
 	const plan = planDelivery({
 		incoming: incoming.sort((a, b) => a.ts - b.ts),
 		sub: options.force && sub.quietHours ? { ...sub, quietHours: undefined } : sub,
 		state,
 		now,
+		fanout,
 		coalesceMs: config.coalesceMs ?? DEFAULTS.coalesceMs,
 	});
 	const digest = plan.items.length ? renderDigest(plan) : "";

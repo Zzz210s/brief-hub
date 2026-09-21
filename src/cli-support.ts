@@ -44,13 +44,11 @@ export function one(flags: Record<string, string[]>, key: string): string | unde
 	return flags[key]?.[0];
 }
 
-export async function readAllBriefs(files: string[]): Promise<Brief[]> {
-	const out: Brief[] = [];
-	for (const file of files) {
-		const tail = await readAfter(file, 0);
-		out.push(...tail.briefs);
-	}
-	return out.sort((a, b) => b.ts - a.ts);
+/** 读取简报:默认走尾部有界读取(不整文件扫描),onlyForList 时按 limit 截断 */
+export async function readAllBriefs(files: string[], options: { limit?: number; tailBytes?: number } = {}): Promise<Brief[]> {
+	const { readRecentBriefs } = await import("./store.ts");
+	const { DEFAULTS } = await import("./schema.ts");
+	return readRecentBriefs(files, options.tailBytes ?? DEFAULTS.listTailBytes, options.limit ?? 200);
 }
 
 /** 跨 harness 补投:从别的工具的会话文件(目前支持 Claude Code JSONL)推导并投稿 */

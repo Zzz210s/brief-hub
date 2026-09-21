@@ -73,5 +73,5 @@ export async function readAfter(file: string, offset: number): Promise<{ briefs:
 	return { briefs, offset: raw.length, corrupted };
 }
 
-export { readSubscription, writeSubscription, listSubscriptions, readState, writeState, markConsumed, readConfig, writeConfig, hubStats } from "./store-config.ts";
+export { readSubscription, writeSubscription, listSubscriptions, readState, writeState, markConsumed, readConfig, writeConfig, hubStats, rebuildFanoutIndex, readFanoutIndex, maxFanoutFor, readRecentBriefs } from "./store-config.ts";
 export type { HubConfig } from "./store-config.ts";

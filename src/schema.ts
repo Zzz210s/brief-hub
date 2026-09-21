@@ -42,6 +42,15 @@ export interface Subscription {
 	sess: string;
 	/** 关心的标签(支持父级:订阅 git 会命中 git.push) */
 	tags: string[];
+	/**
+	 * 投递节奏:
+	 *   auto(默认) —— 拥挤度低时立即投,高时按小时合并(见 DEFAULTS.fanoutBatchK)
+	 *   immediate  —— 每条命中都立刻投
+	 *   hourly / daily —— 按小时/天合并成一条(所有条目仍在集散地,不会丢)
+	 */
+	mode?: "auto" | "immediate" | "hourly" | "daily";
+	/** 合并摘要里最多展开几条标题(其余只给计数) */
+	batchTopN?: number;
 	/** 命中门槛(默认 1.0:父级命中恰好达标,精确命中 2.0 必达) */
 	minScore?: number;
 	/** 每小时 token 预算(默认 2000) */
@@ -91,4 +100,15 @@ export const DEFAULTS = {
 	tokensPerChar: 0.25,
 	/** 每条标题的固定开销(消息框架/标记) */
 	perBriefOverheadTokens: 8,
+	/**
+	 * 拥挤度阈值:命中某条简报的订阅数 ≥ 该值时,auto 模式改为按小时合并投递。
+	 * 目的:会话多起来后,同一条推送不必逐个会话即时打扰(总 token 与订阅数成正比)。
+	 */
+	fanoutBatchK: 4,
+	/** 合并投递的最小间隔(毫秒):hourly=1h,daily=24h */
+	batchWindowMs: 3_600_000,
+	/** 合并摘要里默认展开的标题条数 */
+	batchTopN: 3,
+	/** list 类命令最多从文件尾部读多少字节(避免整文件扫描) */
+	listTailBytes: 64 * 1024,
 } as const;

@@ -36,6 +36,22 @@ session B (subscribed to git/config) ──► polls; pure-code tag match ──
 
 The first run **only aligns the cursor and delivers no history** (so you never get a flood of old briefs).
 
+
+### Scaling: fanout-aware batching (why more sessions does not mean more tokens)
+
+Every session that subscribes to a broad tag (say `git`) would otherwise be interrupted by the same brief. brief-hub tracks a **fanout index** (`index/fanout.json`, refreshed when subscriptions change) and, when a brief's tags have **>= 4 subscribers** (`fanoutBatchK`), `auto` subscriptions switch to **hourly batching**: one digest per hour that expands the top 3 titles and summarises the rest as a count. Errors (`sev:err`) and briefs that address a session directly (`sess:<name>`) are always delivered immediately.
+
+Measured on 8 subscribers, 20 briefs arriving one per minute (poll every minute):
+
+| Mode | Injected messages | Injected tokens |
+|---|---|---|
+| `immediate` (old behaviour) | 152 | 3120 |
+| `auto` (fanout 8 -> hourly) | **8** | **160** |
+
+Nothing is dropped: every brief stays in the hub, remains listed as unread, and is readable with `bh list --unread` / `bh read <id>`; only the timing of the interruption changes.
+
+Other IO-side reductions: `bh list` / `/hub list` read a bounded tail (`listTailBytes`, 64 KB) instead of whole files, and the token budget is charged against the **rendered** digest rather than the sum of every matched item.
+
 ## Install
 
 ```bash
