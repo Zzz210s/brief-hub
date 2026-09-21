@@ -68,8 +68,8 @@ const main = async () => {
 	const cwd = String(payload.cwd ?? process.cwd());
 	if (!sessionId) return;
 
-	const core = await import(join(REPO, "src", "index.ts"));
-	const transcript = await import(join(REPO, "src", "transcript.ts"));
+	const core = await import(pathToFileURL(join(REPO, "src", "index.ts")).href);
+	const transcript = await import(pathToFileURL(join(REPO, "src", "transcript.ts")).href);
 
 	if (event === "SessionStart") {
 		const existing = await core.readSubscription(sessionId);

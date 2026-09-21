@@ -10,6 +10,7 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const REPO = process.env.BRIEF_HUB_HOME || join(homedir(), "brief-hub");
 const STATUS_KEY = "brief-hub";
@@ -29,7 +30,7 @@ export default function (pi: any): void {
 	let busy = false;
 	let unread = 0;
 
-	const load = async (): Promise<any> => (core ??= await import(join(REPO, "src", "index.ts")));
+	const load = async (): Promise<any> => (core ??= await import(pathToFileURL(join(REPO, "src", "index.ts")).href));
 
 	const ensureSubscription = async (): Promise<void> => {
 		const mod = await load();

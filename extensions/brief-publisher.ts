@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const REPO = process.env.BRIEF_HUB_HOME || join(homedir(), "brief-hub");
 const WRITE_TOOLS = new Set(["edit", "write", "multi_edit", "apply_patch", "str_replace_editor"]);
@@ -56,7 +57,7 @@ export default function (pi: any): void {
 		const hasWork = changed.size > 0 || commands.length > 0 || Boolean(lastError);
 		if (!hasWork) return;
 		try {
-			const core = await import(join(REPO, "src", "index.ts"));
+			const core = await import(pathToFileURL(join(REPO, "src", "index.ts")).href);
 			const repo = await detectRepo(meta.cwd);
 			const brief = core.buildBrief(
 				{
