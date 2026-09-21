@@ -73,10 +73,12 @@ export function renderProtocol(items: PendingItem[], options: { maxPerClass?: nu
 	const max = options.maxPerClass ?? 3;
 	const groups = groupPending(items);
 	const lines: string[] = [];
-	lines.push("简报集散地 brief-hub —— 接收端处理协议:");
+	lines.push("【简报集散地 brief-hub · 待你处理】以下简报与你的订阅相关。");
+	lines.push("不要只回复编号或“收到” —— 要么执行,要么延后。处理方式:");
 	lines.push("1) 逐条判断是否属于你的职责(看标签/仓库/项目);2) 相关的用 `bh read <id>` 读全文;");
 	lines.push("3) 按简报的「建议动作」执行,或把它纳入当前计划;4) 处理完 `bh handle <id> --note \"结论\"`;");
 	lines.push("5) 已知晓但暂不处理:`bh defer <id>`(4 小时后重新提醒)。错误类简报必须处理。");
+	lines.push("若你正在执行用户当前请求:先完成它,再回来处理这些简报(或先 defer 记下)。");
 	for (const action of ["act", "check", "fyi"] as ActionClass[]) {
 		const bucket = groups[action];
 		if (bucket.length === 0) continue;

@@ -29,8 +29,9 @@ test("renderProtocol:输出处理步骤 + 按优先级分组 + 控制展开条�
 		{ brief: brief({ id: "f1", title: "参考简报" }), action: "fyi" },
 	];
 	const text = renderProtocol(items);
-	assert.match(text, /接收端处理协议/);
+	assert.match(text, /待你处理/);
 	assert.match(text, /bh handle <id>/);
+	assert.match(text, /不要只回复编号/, "必须明确禁止敷衍回复");
 	assert.match(text, /必须处理\(1\)/);
 	assert.match(text, /需要核对\(1\)/);
 	assert.ok(text.indexOf("必须处理") < text.indexOf("需要核对"), "act 排在前面");

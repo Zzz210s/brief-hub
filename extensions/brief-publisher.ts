@@ -113,8 +113,21 @@ export default function (pi: any): void {
 			}
 			const failed = event?.isError ?? event?.error ?? event?.result?.isError;
 			if (failed) {
-				const text = typeof event?.error === "string" ? event.error : String(event?.result?.content ?? event?.result ?? "");
-				lastError = text.slice(0, 200);
+				// 错误文本要可读:对象直接 String() 会得到 "[object Object]"
+				const raw = typeof event?.error === "string" ? event.error : (event?.result?.content ?? event?.result ?? "");
+				const text =
+					typeof raw === "string"
+						? raw
+						: Array.isArray(raw)
+							? raw.map((part) => (typeof part === "string" ? part : (part?.text ?? ""))).join(" ")
+							: (() => {
+									try {
+										return JSON.stringify(raw);
+									} catch {
+										return "任务失败";
+									}
+								})();
+				lastError = (text || "任务失败").slice(0, 200);
 			}
 		} catch {
 			/* 忽略采集异常 */
