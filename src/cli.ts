@@ -56,6 +56,9 @@ async function run(): Promise<void> {
 			};
 			const brief = buildBrief(snapshot);
 			if (one(args.flags, "title")) brief.title = clamp(one(args.flags, "title")!, 60);
+			// 显式补标签(--tag 可重复):用于"通知类"简报,让指定的订阅者能收到
+			const extraTags = args.flags.tag ?? [];
+			if (extraTags.length) brief.tags = [...new Set([...brief.tags, ...extraTags])].sort();
 			await appendBrief(brief);
 			console.log(args.bool.has("json") ? JSON.stringify(brief) : `已投稿 ${brief.id} [${brief.kind}] ${brief.title}`);
 			return;
