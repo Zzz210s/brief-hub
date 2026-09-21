@@ -31,3 +31,4 @@ export {
 	writeState,
 	writeSubscription,
 } from "./store.ts";
+export { PROTOCOL_HINT, composeInjection, suggestedTagsFor } from "./inject.ts";

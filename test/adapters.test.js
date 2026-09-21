@@ -55,3 +55,24 @@ test("Codex 适配器端到端:载荷 -> 简报落盘(零模型调用)", async (
 	assert.equal(brief.src.sess, "thread-xyz");
 	assert.ok(brief.tags.includes("tool:codex"));
 });
+
+test("inject:只有存在简报时才生成注入文本(无简报 0 token)", async () => {
+	const { composeInjection, suggestedTagsFor, PROTOCOL_HINT } = await import("../src/inject.ts");
+	assert.equal(composeInjection(""), undefined);
+	assert.equal(composeInjection("   "), undefined);
+	const text = composeInjection("简报集散地:1 条相关");
+	assert.ok(text.startsWith(PROTOCOL_HINT));
+	assert.match(text, /bh read <id>/);
+	// 角色 -> 建议订阅标签
+	assert.deepEqual(suggestedTagsFor("专管 github"), ["git", "sev:err"]);
+	assert.deepEqual(suggestedTagsFor("电脑优化"), ["sev:err", "system"]);
+	assert.ok(suggestedTagsFor("随便什么").includes("sev:err"), "错误标签总是建议订阅");
+});
+
+test("pi 订阅器:before_agent_start 返回自定义消息(把简报送进模型上下文)", async () => {
+	const src = await (await import("node:fs/promises")).readFile(new URL("../extensions/brief-subscriber.ts", import.meta.url), "utf8");
+	assert.match(src, /pi\.on\("before_agent_start"/, "必须挂在 before_agent_start 上");
+	assert.match(src, /customType: "brief-hub"/, "以自定义消息形式注入");
+	assert.match(src, /composeInjection/, "复用统一措辞");
+	assert.match(src, /if \(!injected\) return;/, "无简报时不注入");
+});

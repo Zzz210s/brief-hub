@@ -127,9 +127,11 @@ const main = async () => {
 	}
 
 	if (event === "UserPromptSubmit") {
-		// 有相关简报时把摘要打到 stdout(Claude 作为上下文注入);没有则输出空
+		// 有相关简报时把「协议提示 + 摘要」打到 stdout(Claude 会把它作为上下文注入);
+		// 没有相关简报时什么都不输出 —— 零 token、零打扰
 		const result = await core.pollOnce(sessionId);
-		if (result.digest) process.stdout.write(result.digest + "\n");
+		const injected = core.composeInjection(result.digest ?? "");
+		if (injected) process.stdout.write(injected + "\n");
 		return;
 	}
 };

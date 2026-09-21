@@ -102,6 +102,33 @@ export default function (pi: any): void {
 		timer = null;
 	});
 
+
+	// 关键:把简报送进**模型上下文**(而非只弹界面通知)。
+	// pi 的 before_agent_start 支持返回一条自定义消息,这是扩展能影响本轮的官方通道。
+	pi.on("before_agent_start", async () => {
+		try {
+			const mod = await load();
+			const result = await mod.pollOnce(meta.sessionId);
+			unread = result.state?.unread?.length ?? 0;
+			const injected = mod.composeInjection(result.digest ?? "");
+			if (!injected) return; // 无相关简报 -> 完全不注入(0 token)
+			try {
+				pi.ui?.setStatus?.(STATUS_KEY, unread > 0 ? `简报 ${unread}` : undefined);
+			} catch {
+				/* 无 UI 忽略 */
+			}
+			return {
+				message: {
+					customType: "brief-hub",
+					content: injected,
+					display: true,
+				},
+			};
+		} catch {
+			return;
+		}
+	});
+
 	pi.registerCommand("hub", {
 		description: "简报集散地:status/list/read/sub/off",
 		handler: async (args: string, ctx: any) => {
