@@ -1,0 +1,17 @@
+{
+  "name": "brief-hub",
+  "version": "0.1.0",
+  "description": "AI 会话简报集散地:任务完成自动投稿(带标签),会话按标签订阅自动阅读相关简报并标记已读,零 token 匹配",
+  "type": "module",
+  "bin": { "bh": "./src/cli.ts" },
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "status": "node src/cli.ts status",
+    "list": "node src/cli.ts list"
+  },
+  "keywords": ["pi-package", "pi", "ai", "brief", "inbox", "tag-subscription", "agent-coordination"],
+  "author": "Zzz210s",
+  "license": "MIT",
+  "private": true
+}

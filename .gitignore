@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+
+# AI 运行文件(不入库)
+AGENTS.md
+CLAUDE.md
+.claude/
+.plans/
+docs/superpowers/
