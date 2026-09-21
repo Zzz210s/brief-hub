@@ -19,6 +19,11 @@ export interface PollOptions {
 	includeHistory?: boolean;
 	/** 强制忽略静默时段 */
 	force?: boolean;
+	/**
+	 * 只窥视(不消费):算出本轮会投递什么,但**不推进游标、不标已读、不扣预算**。
+	 * 用于“状态徽标/待读计数”这类展示路径 —— 避免“看板把简报送吃了、模型从未见过”。
+	 */
+	peek?: boolean;
 }
 
 export interface PollResult {
@@ -92,6 +97,11 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 
 	// 只有投递出去的才标已读;被预算压下的留在 unread 供后续展开
 	const deliveredIds = plan.items.flatMap((item) => [item.brief.id, ...(item.mergedFrom ?? [])]);
+
+	// peek:只报告本轮会投递什么,不改变任何持久状态(游标/已读/预算全不动)
+	if (options.peek) {
+		return { sess, plan, digest, scanned, delivered: plan.items.length, state, reason: plan.reason, bytesRead, skippedShards: shardRead.skipped };
+	}
 	const newlyUnread = [...new Set([...(state.unread ?? []), ...deliveredIds, ...plan.matchedIds.filter((id) => !deliveredIds.includes(id))])];
 	let next: SubState = {
 		...state,

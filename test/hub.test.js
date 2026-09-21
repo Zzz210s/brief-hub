@@ -116,3 +116,23 @@ test("pollOnce:无订阅时给出明确原因(不报错)", async () => {
 		assert.match(result.reason ?? "", /无订阅/);
 	});
 });
+
+test("peek:只窥视不消费 —— 简报不会被状态徽标吃掉", async () => {
+	await withTempHub(async () => {
+		await appendBrief(buildBrief(snapshot(), { id: "b-peek-0001" }));
+		await writeSubscription({ sess: "peeker", tags: ["git"], delivery: "l1" });
+		await pollOnce("peeker", { now: Date.now() }); // 首轮对齐
+		await appendBrief(buildBrief(snapshot({ sessionName: "另一会话" }), { id: "b-peek-0002" }));
+		const peeked = await pollOnce("peeker", { now: Date.now() + 1000, peek: true });
+		assert.equal(peeked.delivered, 1, "窥视能看到 1 条");
+		assert.match(peeked.digest, /b-peek-0002/);
+		const state = await readState("peeker");
+		assert.equal(state.consumed.includes("b-peek-0002"), false, "窥视不得标已读");
+		// 真正投递(非 peek)时才消费
+		const real = await pollOnce("peeker", { now: Date.now() + 2000 });
+		assert.equal(real.delivered, 1, "非窥视仍能投递同一条(未被吃掉)");
+		assert.match(real.digest, /b-peek-0002/);
+		const after = await readState("peeker");
+		assert.ok(after.consumed.includes("b-peek-0002"), "真正注入后才标已读");
+	});
+});

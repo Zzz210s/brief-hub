@@ -54,8 +54,10 @@ export default function (pi: any): void {
 		busy = true;
 		try {
 			const mod = await load();
-			const result = await mod.pollOnce(meta.sessionId);
-			unread = result.state?.unread?.length ?? 0;
+			// peek:只算"待读有多少"给徽标用 —— 不消费,避免简报被看板吃掉
+			const peeked = await mod.pollOnce(meta.sessionId, { peek: true });
+			const result = peeked;
+			unread = peeked.plan ? peeked.plan.matchedIds.length : (peeked.state?.unread?.length ?? 0);
 			const badge = unread > 0 ? `简报 ${unread}` : undefined;
 			try {
 				pi.ui?.setStatus?.(STATUS_KEY, badge);
