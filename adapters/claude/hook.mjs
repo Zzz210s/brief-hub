@@ -16,6 +16,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const REPO = process.env.BRIEF_HUB_HOME || join(homedir(), "brief-hub");
 
@@ -133,4 +134,8 @@ const main = async () => {
 	}
 };
 
-main().catch(() => process.exit(0)); // hook 绝不阻塞 Claude
+main().catch((error) => {
+	process.stderr.write(`[brief-hub] ${error instanceof Error ? error.message : String(error)}
+`);
+	process.exit(0);
+});
