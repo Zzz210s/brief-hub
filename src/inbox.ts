@@ -10,6 +10,7 @@
 import { DEFAULTS, type SubState, type Subscription } from "./schema.ts";
 import { listBriefFiles, markConsumed, readAfter, readConfig, readFanoutIndex, readState, readSubscription, todayFile, writeState } from "./store.ts";
 import { planDelivery, renderDigest, type DeliveryPlan } from "./match.ts";
+import { classify, renderProtocol, shouldSurface, type PendingItem } from "./handling.ts";
 import { maxFanoutFor } from "./store.ts";
 import { readShards } from "./shards.ts";
 
@@ -93,7 +94,12 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 		fanout,
 		coalesceMs: config.coalesceMs ?? DEFAULTS.coalesceMs,
 	});
-	const digest = plan.items.length ? renderDigest(plan) : "";
+	const pendingItems: PendingItem[] = plan.items.map((item) => ({
+		brief: item.brief,
+		action: classify(item.brief, sub),
+		resurfaced: Boolean(state.deferred?.[item.brief.id]),
+	}));
+	const digest = pendingItems.length ? (renderProtocol(pendingItems) ?? renderDigest(plan)) : "";
 
 	// 只有投递出去的才标已读;被预算压下的留在 unread 供后续展开
 	const deliveredIds = plan.items.flatMap((item) => [item.brief.id, ...(item.mergedFrom ?? [])]);

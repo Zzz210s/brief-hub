@@ -77,6 +77,10 @@ export interface SubState {
 	unread: string[];
 	/** 已消费的 id(窗口内);超出窗口自动裁剪 */
 	consumed: string[];
+	/** 已处理:id -> 处理时间(处理完的不再浮现) */
+	handled?: Record<string, number>;
+	/** 已延迟:id -> 延迟时间(到点后重新提醒) */
+	deferred?: Record<string, number>;
 	/** 已消费时间戳,用于裁剪 */
 	consumedAt?: Record<string, number>;
 	/** 当前小时的预算使用量 */

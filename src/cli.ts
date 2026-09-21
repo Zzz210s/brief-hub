@@ -15,7 +15,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { doctorRows, formatDoctor, one, parseArgs, publishFromTranscript, readAllBriefs } from "./cli-support.ts";
+import { doctorRows, formatDoctor, markHandling, one, parseArgs, pendingFor, pendingIds, publishFromTranscript, readAllBriefs } from "./cli-support.ts";
 import { buildBrief, clamp } from "./brief.ts";
 import { defaultSub, pollOnce } from "./inbox.ts";
 import { renderBrief } from "./match.ts";
@@ -170,6 +170,20 @@ async function run(): Promise<void> {
 		case "doctor": {
 			const rows = await doctorRows();
 			console.log(args.bool.has("json") ? JSON.stringify(rows, null, "	") : formatDoctor(rows));
+			return;
+		}
+		case "handle":
+		case "defer": {
+			if (!sess) throw new Error(`${args.command} 需要 --sess <会话>`);
+			const ids = args.rest.length ? args.rest : await pendingIds(sess);
+			if (!ids.length) { console.log("没有待处理的简报"); return; }
+			const result = await markHandling(sess, ids, args.command === "handle" ? "handle" : "defer");
+			console.log(`${args.command === "handle" ? "已标记处理" : "已延迟"} ${result.ok} 条:${ids.join(" ")}${args.command === "defer" ? "(4 小时后重新提醒)" : ""}`);
+			return;
+		}
+		case "pending": {
+			if (!sess) throw new Error("pending 需要 --sess <会话>");
+			console.log(await pendingFor(sess));
 			return;
 		}
 		case "status": {
