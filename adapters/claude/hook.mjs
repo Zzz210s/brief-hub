@@ -71,6 +71,7 @@ const main = async () => {
 
 	const core = await import(pathToFileURL(join(REPO, "src", "index.ts")).href);
 	const transcript = await import(pathToFileURL(join(REPO, "src", "transcript.ts")).href);
+	const errors = await import(pathToFileURL(join(REPO, "src", "errors.ts")).href);
 
 	if (event === "SessionStart") {
 		const existing = await core.readSubscription(sessionId);
@@ -92,7 +93,9 @@ const main = async () => {
 		let next = transcript.recordToolCall(state, call.toolName, call.input);
 		const response = payload.tool_response ?? payload.toolResponse;
 		if (response && typeof response === "object" && (response.is_error || response.isError)) {
-			next = transcript.recordFailure(next, JSON.stringify(response).slice(0, 200));
+			// 失败信息形状不定(字符串 / {message} / {content:[{type,text}]}),
+			// 交给统一提取器,避免要点退化成 "[object Object]" 或整段 JSON。
+			next = transcript.recordFailure(next, errors.errorText(response) ?? "工具执行失败");
 		}
 		await saveState(next);
 		return;
