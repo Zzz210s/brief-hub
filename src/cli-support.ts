@@ -51,3 +51,33 @@ export async function readAllBriefs(files: string[]): Promise<Brief[]> {
 	}
 	return out.sort((a, b) => b.ts - a.ts);
 }
+
+/** 跨 harness 补投:从别的工具的会话文件(目前支持 Claude Code JSONL)推导并投稿 */
+export async function publishFromTranscript(options: {
+	path: string;
+	harness?: string;
+	sessionId?: string;
+	name?: string;
+	repo?: string;
+	cwd?: string;
+}): Promise<string> {
+	const [{ buildBrief }, { appendBrief }, transcript] = await Promise.all([
+		import("./brief.ts"),
+		import("./store.ts"),
+		import("./transcript.ts"),
+	]);
+	const parsed = await transcript.parseClaudeTranscript(options.path);
+	const brief = buildBrief({
+		sessionId: options.sessionId ?? `${options.harness ?? "claude"}-${process.pid}`,
+		tool: options.harness ?? "claude",
+		sessionName: options.name ?? `${options.harness ?? "claude"}:backfill`,
+		cwd: parsed.cwd ?? options.cwd ?? process.cwd(),
+		repo: options.repo,
+		changedPaths: parsed.changedPaths ?? [],
+		commands: parsed.commands ?? [],
+		errorText: parsed.errorText,
+		finalMessage: parsed.finalMessage,
+	});
+	await appendBrief(brief);
+	return `已补投 ${brief.id} [${brief.kind}] ${brief.title}`;
+}

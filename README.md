@@ -31,6 +31,31 @@
 
 首次运行**只对齐游标、不投递历史**（避免一次灌进几百条旧简报）。
 
+## 跨 AI(不只 pi)
+
+核心是 **harness 无关**的:投稿/消费都通过 `bh` CLI 与文件协议,各 AI 只提供薄适配器。
+
+| harness | 投稿(生产) | 消费(订阅投递) | 状态 |
+|---|---|---|---|
+| **pi** | 扩展 `brief-publisher`(任务完成/出错自动投) | 扩展 `brief-subscriber`(轮询 + 标题批摘要 + `/hub`) | 已实现 |
+| **Claude Code** | hook `adapters/claude/hook.mjs`(PostToolUse 累积 → Stop/SessionEnd 投稿;并可解析会话 JSONL 兜底) | 同一 hook 的 `UserPromptSubmit` 分支:把摘要打到 stdout 作为上下文 | 已实现(需 `disableAllHooks: false`) |
+| **任意 CLI / 脚本** | `bh publish --tool=<名> --sess-id=<id> …` | `bh digest --sess=<id>`(打印待读摘要并标记已读) | 已实现(通用契约) |
+| opencode / 其它 | 调 `bh publish`(其插件 API 的 idle/end 事件) | `bh digest` 或自建轮询 | 契约就绪,适配器待做 |
+
+### Claude Code 安装
+
+```bash
+node adapters/claude/install-hooks.mjs      # 幂等合并 hooks 到 ~/.claude/settings.json
+```
+
+> 注意:Claude Code 设置里 **`disableAllHooks: true` 会让所有 hook 失效**——本脚本不改这个开关,需要你自己设为 `false`(改前请确认其它 hook 的用途)。
+
+### 新增一个 harness(三步)
+
+1. **投稿**:把该 harness 的事实整理成 `SessionSnapshot`(改动路径 / 命令 / 错误 / cwd / 会话 id),调 `bh publish`(或 `bh publish-from <会话文件> --harness <名>`),核心会负责标签推导与去重。
+2. **消费**:用 `bh digest --sess=<该会话 id>` 拿摘要(已在内部完成匹配、预算、合并、已读标记);能在 `UserPromptSubmit`/`idle` 之类时机注入就注入,不能就让人手动跑。
+3. **订阅**:`bh sub add git config --sess=<该会话 id>`。所有 harness 共用同一份订阅数据(`~/.ai-brief-hub/subs/`)。
+
 ## 安装
 
 ```bash

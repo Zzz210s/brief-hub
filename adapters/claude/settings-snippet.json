@@ -1,0 +1,10 @@
+{
+	"_comment": "brief-hub 的 Claude Code hook 配置片段(install-hooks.mjs 会自动合并;此处仅供手工参考)",
+	"hooks": {
+		"SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node \"~/brief-hub/adapters/claude/hook.mjs\"", "timeout": 15 }] }],
+		"PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node \"~/brief-hub/adapters/claude/hook.mjs\"", "timeout": 15 }] }],
+		"Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node \"~/brief-hub/adapters/claude/hook.mjs\"", "timeout": 20 }] }],
+		"SessionEnd": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node \"~/brief-hub/adapters/claude/hook.mjs\"", "timeout": 20 }] }],
+		"UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "node \"~/brief-hub/adapters/claude/hook.mjs\"", "timeout": 15 }] }]
+	}
+}

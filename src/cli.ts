@@ -15,7 +15,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { one, parseArgs, readAllBriefs } from "./cli-support.ts";
+import { one, parseArgs, publishFromTranscript, readAllBriefs } from "./cli-support.ts";
 import { buildBrief, clamp } from "./brief.ts";
 import { defaultSub, pollOnce } from "./inbox.ts";
 import { renderBrief } from "./match.ts";
@@ -151,6 +151,20 @@ async function run(): Promise<void> {
 				commands: args.rest,
 			});
 			console.log(tags.join(" "));
+			return;
+		}
+		case "digest": {
+			if (!sess) throw new Error("digest 需要 --sess <会话>");
+			const result = await pollOnce(sess, { force: args.bool.has("force") });
+			if (result.digest) console.log(result.digest);
+			else if (args.bool.has("json")) console.log(JSON.stringify({ delivered: 0, reason: result.reason }));
+			return;
+		}
+		case "publish-from": {
+			// 跨 harness 补投:从别的工具的会话文件推导简报(见 cli-support.ts)
+			const path = args.rest[0];
+			if (!path) throw new Error("用法: bh publish-from <会话文件> [--harness claude] [--name <会话名>]");
+			console.log(await publishFromTranscript({ path, harness: one(args.flags, "harness"), sessionId: one(args.flags, "sess-id"), name: one(args.flags, "name"), repo: one(args.flags, "repo") }));
 			return;
 		}
 		case "status": {
