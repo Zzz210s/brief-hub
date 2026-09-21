@@ -71,6 +71,8 @@ export interface SubState {
 	cursor?: number;
 	/** 每文件游标:{绝对路径: 字节偏移} —— 跨天轮转时不会重放 */
 	cursors?: Record<string, number>;
+	/** 分片文件的 size/mtime 快照:未变化则本轮跳过不读(零 IO) */
+	seen?: Record<string, { size: number; mtimeMs: number }>;
 	/** 已投递但未读的 id(供 --unread 列出) */
 	unread: string[];
 	/** 已消费的 id(窗口内);超出窗口自动裁剪 */

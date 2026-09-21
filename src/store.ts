@@ -49,9 +49,19 @@ export function todayFile(date = new Date()): string {
 }
 
 /** 追加一条简报 */
+/**
+ * 追加一条简报:归档(可 grep/回放、计数不丢)+ 标签分片(供订阅者读同一份)。
+ * 分片写入失败不影响归档(订阅者会退回归档扫描)。
+ */
 export async function appendBrief(brief: Brief): Promise<void> {
 	await mkdir(briefsDir(), { recursive: true });
 	await appendFile(todayFile(new Date(brief.ts)), JSON.stringify(brief) + "\n", "utf8");
+	try {
+		const { writeShards } = await import("./shards.ts");
+		await writeShards(brief);
+	} catch {
+		/* 分片失败:读者退回归档扫描 */
+	}
 }
 
 /** 读取某天文件里 offset 之后的内容(返回简报与新的偏移) */

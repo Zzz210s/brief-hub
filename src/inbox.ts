@@ -11,6 +11,7 @@ import { DEFAULTS, type SubState, type Subscription } from "./schema.ts";
 import { listBriefFiles, markConsumed, readAfter, readConfig, readFanoutIndex, readState, readSubscription, todayFile, writeState } from "./store.ts";
 import { planDelivery, renderDigest, type DeliveryPlan } from "./match.ts";
 import { maxFanoutFor } from "./store.ts";
+import { readShards } from "./shards.ts";
 
 export interface PollOptions {
 	now?: number;
@@ -28,6 +29,10 @@ export interface PollResult {
 	scanned: number;
 	delivered: number;
 	state: SubState;
+	/** 实际读取字节(衡量 IO 开销) */
+	bytesRead?: number;
+	/** 因未变化而跳过的分片数(零 IO) */
+	skippedShards?: number;
 }
 
 export async function pollOnce(sess: string, options: PollOptions = {}): Promise<PollResult> {
@@ -40,29 +45,36 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 	const cursors: Record<string, number> = state.cursors ?? {};
 	const firstRun = Object.keys(cursors).length === 0 && !options.includeHistory;
 
-	const incoming = [];
-	let scanned = 0;
-	const nextCursors: Record<string, number> = { ...cursors };
+	// 读共享分片(一条简报按标签链写入,同一标签的所有订阅者读**同一份**文件);
+	// mtime/size 未变化的分片本轮完全不读(零 IO)。
+	const shardTags = [...new Set((sub.tags ?? []).filter((tag) => !tag.includes("*")))];
+	const shardRead = shardTags.length ? await readShards(shardTags, cursors, state.seen ?? {}) : { briefs: [], cursors, skipped: 0, bytesRead: 0, seen: {} };
+	const incoming: Brief[] = [...shardRead.briefs];
+	let scanned = shardRead.briefs.length;
+	let bytesRead = shardRead.bytesRead;
+	const nextCursors: Record<string, number> = { ...shardRead.cursors };
 	for (const file of files) {
 		if (firstRun) {
 			const aligned = await readAfter(file, 0);
 			nextCursors[file] = aligned.offset;
 			continue;
 		}
+		// 分片已覆盖常规投递路径;归档仅用于补投/回放(此处不再扫)
+		if (shardTags.length) continue;
 		const tail = await readAfter(file, cursors[file] ?? 0);
 		nextCursors[file] = tail.offset;
-		scanned += tail.corrupt ? 0 : 0;
 		if (tail.briefs.length) {
 			incoming.push(...tail.briefs);
 			scanned += tail.briefs.length;
 		}
 	}
-	// 只保留最近 3 天的游标,避免无限增长
-	const keep = new Set(files);
+	// 只保留归档文件与分片文件的游标(避免无限增长);
+	// 注意:分片游标必须保留 —— 否则每轮都从头重读,IO 会随简报数线性上涨。
+	const keep = new Set([...files, ...Object.keys(shardRead.seen)]);
 	const trimmedCursors = Object.fromEntries(Object.entries(nextCursors).filter(([file]) => keep.has(file)));
 
 	if (firstRun) {
-		const next = await writeState(sess, { ...state, cursors: trimmedCursors });
+		const next = await writeState(sess, { ...state, cursors: trimmedCursors, seen: shardRead.seen });
 		return { sess, reason: "首次运行:已对齐游标(不投递历史)", digest: "", scanned: 0, delivered: 0, state: next };
 	}
 
@@ -84,6 +96,7 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 	let next: SubState = {
 		...state,
 		cursors: trimmedCursors,
+		seen: shardRead.seen,
 		unread: newlyUnread.slice(0, 200),
 		lastDeliveryAt: plan.items.length ? now : state.lastDeliveryAt,
 	};
@@ -94,7 +107,7 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 		next.budget = { hourStart, used: used + plan.estimatedTokens };
 	}
 	const saved = await writeState(sess, next);
-	return { sess, plan, digest, scanned, delivered: plan.items.length, state: saved, reason: plan.reason };
+	return { sess, plan, digest, scanned, delivered: plan.items.length, state: saved, reason: plan.reason, bytesRead, skippedShards: shardRead.skipped };
 }
 
 /** 生成一个默认订阅(自动推导的兜底:订阅常见领域标签,但不含任何"自动注入") */
