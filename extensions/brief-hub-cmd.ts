@@ -7,6 +7,9 @@ import { join } from "node:path";
 type Ctx = { load: () => Promise<any>; meta: { sessionId: string; name?: string; cwd: string }; STATUS_KEY: string };
 
 export function registerHubCommand(pi: any, ctx: Ctx): void {
+	const { load, meta } = ctx;
+
+	pi.registerCommand("hub", {
 		description: "简报集散地:status/list/read/sub/off",
 		handler: async (args: string, ctx: any) => {
 			const mod = await load();
@@ -74,3 +77,9 @@ export function registerHubCommand(pi: any, ctx: Ctx): void {
 		},
 	});
 }
+
+/**
+ * pi 会把 extensions/ 下的每个顶层 .ts 当扩展加载:本文件是 brief-subscriber 的辅助模块,
+ * 故导出一个空工厂函数以满足加载器(真正的注册由 brief-subscriber.ts 调用 registerHubCommand)。
+ */
+export default function (): void {};
