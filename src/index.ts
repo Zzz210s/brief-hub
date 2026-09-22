@@ -7,7 +7,7 @@
 export { DEFAULTS } from "./schema.ts";
 export type { Brief, Kind, Severity, SubState, Subscription } from "./schema.ts";
 export { deriveTags, scoreBrief, tagChain, tagsIntersect } from "./tags.ts";
-export { buildBrief, clamp, dedupeKey, makeId } from "./brief.ts";
+export { buildBrief, clamp, dedupeKey, makeId, shouldPublish } from "./brief.ts";
 export { estimateTokens, inQuietHours, planDelivery, renderBrief, renderDigest } from "./match.ts";
 export { alignCursor, defaultSub, pollOnce } from "./inbox.ts";
 export { maxFanoutFor, readFanoutIndex, readRecentBriefs, rebuildFanoutIndex } from "./store-config.ts";

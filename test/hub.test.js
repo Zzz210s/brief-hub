@@ -164,3 +164,29 @@ test("协议只发一次:第二次注入用精简表头(省 token)", async () =>
 		assert.ok(!second.digest.includes("不要只回复编号"), "不再重复整段协议");
 	});
 });
+
+test("核心层噪声过滤:任何 harness 走 buildBrief 都会被拦", () => {
+	// 噪声:标题不再是"任务出错",严重度回到 info
+	const noise = buildBrief(snapshot({ errorText: "[rtk] /!\ No hook installed — run rtk init -g" }));
+	assert.equal(noise.severity, "info", "噪声不产生 err");
+	assert.ok(!noise.title.startsWith("任务出错"), `噪声不应是错误标题:${noise.title}`);
+	assert.equal(noise.kind, "task.done", "降级为普通完成");
+
+	// 工具级:降 warn
+	const tool = buildBrief(snapshot({ errorText: "ENOENT: no such file or directory, open F:/x.txt" }));
+	assert.equal(tool.severity, "warn", "工具级失败降 warn");
+	assert.ok(tool.title.startsWith("工具失败"), tool.title);
+
+	// 任务级:保持 err
+	const task = buildBrief(snapshot({ errorText: "npm ERR! code ELIFECYCLE 构建失败" }));
+	assert.equal(task.severity, "err");
+	assert.ok(task.title.startsWith("任务出错"), task.title);
+});
+
+test("shouldPublish:没内容不投,噪声不算内容", async () => {
+	const { shouldPublish } = await import("../src/brief.ts");
+	assert.equal(shouldPublish(snapshot({ changedPaths: [], commands: [] })), false, "空快照不投");
+	assert.equal(shouldPublish(snapshot({ changedPaths: [], commands: [], errorText: "[object Object]" })), false, "噪声不投");
+	assert.equal(shouldPublish(snapshot({ changedPaths: [], commands: [], errorText: "npm ERR! 失败" })), true, "任务级失败要投");
+	assert.equal(shouldPublish(snapshot()), true, "有改动就投");
+});

@@ -5,6 +5,7 @@
  * (会话名、改动路径、执行过的命令、最终回复的截断),因此投稿成本为 0 额外 token。
  */
 
+import { errorClass } from "./errors.ts";
 import { DEFAULTS, type Brief, type Kind, type Severity } from "./schema.ts";
 import { deriveTags } from "./tags.ts";
 
@@ -72,17 +73,33 @@ export function makeId(now = new Date(), random: () => number = Math.random): st
 }
 
 /** 从会话快照构建简报(纯函数,可单测) */
+/** 是否值得投一条简报(纯函数):没有改动/命令/错误/标题时不投 */
+export function shouldPublish(snapshot: SessionSnapshot & { title?: string }): boolean {
+	if (snapshot.title) return true;
+	if (snapshot.changedPaths?.length) return true;
+	if (snapshot.commands?.length) return true;
+	const klass = snapshot.errorText ? errorClass(snapshot.errorText) : "none";
+	return klass === "task" || klass === "tool";
+}
+
 export function buildBrief(snapshot: SessionSnapshot, options: { now?: number; id?: string } = {}): Brief {
 	const now = options.now ?? Date.now();
-	const failed = Boolean(snapshot.errorText);
+	// 噪声过滤放在核心层:pi 扩展 / Claude hook / Codex notify / opencode 插件 / bh publish
+	// 全都经过这里,不必各自实现一遍(实测过适配器漏过滤会导致噪声广播)
+	const klass = snapshot.errorText ? errorClass(snapshot.errorText) : "none";
+	const dropped = klass === "noise";
+	const warnOnly = klass === "tool";
+	const effectiveError = dropped ? undefined : snapshot.errorText;
+	const failed = Boolean(effectiveError);
 	const kind: Kind = failed ? "task.error" : snapshot.git?.pushed ? "git.push" : "task.done";
-	const severity: Severity = failed ? "err" : "info";
+	// 工具级失败降为 warn:不占接收端的"必须处理"配额
+	const severity: Severity = failed ? (warnOnly ? "warn" : "err") : "info";
 
 	const title = failed
-		? clamp(`任务出错: ${snapshot.errorText ?? ""}`, MAX_TITLE)
+		? clamp(`${warnOnly ? "工具失败" : "任务出错"}: ${effectiveError ?? ""}`, MAX_TITLE)
 		: clamp(buildTitle(snapshot), MAX_TITLE);
 
-	const facts = failed ? buildErrorFacts(snapshot) : buildDoneFacts(snapshot);
+	const facts = failed ? buildErrorFacts({ ...snapshot, errorText: effectiveError }) : buildDoneFacts(snapshot);
 	const tags = deriveTags({
 		tool: snapshot.tool,
 		sessionName: snapshot.sessionName,
