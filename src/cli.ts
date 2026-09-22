@@ -15,7 +15,8 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { doctorRows, formatDoctor, markHandling, one, orphansFor, parseArgs, pendingFor, pendingIds, publishFromTranscript, readAllBriefs } from "./cli-support.ts";
+import { doctorRows, formatDoctor, markHandling, one, orphansFor, parseArgs, pendingFor, pendingIds, publishFromTranscript, purgeBriefs, readAllBriefs } from "./cli-support.ts";
+import { filterFromArgs } from "./purge.ts";
 import { buildBrief, clamp } from "./brief.ts";
 import { defaultSub, pollOnce } from "./inbox.ts";
 import { renderBrief } from "./match.ts";
@@ -187,6 +188,18 @@ async function run(): Promise<void> {
 		case "pending": {
 			if (!sess) throw new Error("pending 需要 --sess <会话>");
 			console.log(await pendingFor(sess));
+			return;
+		}
+		case "purge": {
+			const filter = filterFromArgs({
+				kind: one(args.flags, "kind"),
+				severity: one(args.flags, "severity"),
+				before: one(args.flags, "before"),
+				pattern: one(args.flags, "pattern"),
+				noise: args.bool.has("noise"),
+				sess: sess ?? undefined,
+			});
+			console.log(await purgeBriefs(filter, args.bool.has("yes")));
 			return;
 		}
 		case "status": {

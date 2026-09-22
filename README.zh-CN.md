@@ -107,6 +107,9 @@ bh read <id>                               # 读正文(读完自动标已读)
 bh sub add git config --sess=<会话>         # 订阅领域标签
 bh sub add "repo:Zzz210s/*" --sess=<会话>   # 订阅具体仓库
 bh sub add sev:err --sess=<会话>            # 只关心错误
+bh status --orphans                         # 列出无人处理的简报(找噪声源)
+bh purge --noise                            # 预览:清掉噪声类简报(默认只预览)
+bh purge --noise --yes                      # 执行:命中内容移入系统回收站
 bh poll --sess=<会话>                       # 手动跑一次轮询(调试)
 ```
 

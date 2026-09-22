@@ -39,6 +39,7 @@ export function classify(brief: Brief, sub: Subscription): ActionClass {
 /** 是否该在本次浮现:未处理 && (未延迟 || 延迟已到) */
 export function shouldSurface(brief: Brief, state: SubState & HandlingState, now: number, resurfaceMs = DEFER_RESURFACE_MS): boolean {
 	if (state.handled?.[brief.id]) return false;
+	if (state.consumed?.includes(brief.id)) return false; // 已投递过的不重复(分片重写后游标可能回退)
 	const deferredAt = state.deferred?.[brief.id];
 	if (deferredAt && now - deferredAt < resurfaceMs) return false;
 	return true;
