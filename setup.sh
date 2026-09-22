@@ -36,7 +36,7 @@ wired=0
 # 3.1 pi
 if [ -d "$AGENT_DIR" ]; then
   mkdir -p "$AGENT_DIR/extensions"
-  for f in brief-publisher.ts brief-subscriber.ts; do
+  for f in brief-publisher.ts brief-subscriber.ts brief-hub-cmd.ts; do
     cp -f "$REPO_DIR/extensions/$f" "$AGENT_DIR/extensions/$f" && wired=$((wired+1))
   done
   log "pi: 已安装投稿器 + 订阅器扩展(重启 pi 或 /reload 生效)"
