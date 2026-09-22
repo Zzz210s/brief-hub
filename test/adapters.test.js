@@ -79,7 +79,7 @@ test("pi 订阅器:before_agent_start 返回自定义消息(把简报送进模�
 
 test("errorClass:瞬时噪声不投,任务级失败照投", async () => {
 	const { errorClass } = await import("../src/errors.ts");
-	for (const noise of ["unexpected EOF while looking for", "[object Object]", "--check 原 AGENTS.md", "/usr/bin/bash: -c: line 1: x", "短", "<stdin>:20: SyntaxWarning: invalid escape", "108: model.setCollapsed(ref, false); 637: private _fi", "[rtk] /!\ No hook installed", "Could not find edits[0] in F:/x", "Dangerous command blocked (no UI for confirmation)"]) {
+	for (const noise of ["unexpected EOF while looking for", "[object Object]", "--check 原 AGENTS.md", "/usr/bin/bash: -c: line 1: x", "短", "<stdin>:20: SyntaxWarning: invalid escape", "108: model.setCollapsed(ref, false); 637: private _fi", "[rtk] /!\ No hook installed", "Could not find edits[0] in F:/x", "Dangerous command blocked (no UI for confirmation)", "Found 3 occurrences of edits[1] in F:/x", "Error: Access denied: path F:/x", "Tool ctx_reduce not found"]) {
 		assert.equal(errorClass(noise), "noise", `应为噪声:${noise}`);
 	}
 	assert.equal(errorClass("ENOENT: no such file or directory, open F:/x.txt"), "tool", "缺文件是工具级");

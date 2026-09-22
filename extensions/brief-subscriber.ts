@@ -11,7 +11,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { registerHubCommand } from "./brief-hub-cmd.ts";
 
 const REPO = process.env.BRIEF_HUB_HOME || join(homedir(), "brief-hub");
 const STATUS_KEY = "brief-hub";
@@ -22,7 +21,7 @@ interface Meta {
 	cwd: string;
 }
 
-export default function (pi: any): void {
+export default async function (pi: any): Promise<void> {
 	if (process.env.BRIEF_HUB === "0") return;
 
 	let meta: Meta = { sessionId: "", name: "", cwd: process.cwd() };
@@ -132,5 +131,15 @@ export default function (pi: any): void {
 		}
 	});
 
-	registerHubCommand(pi, { load, meta, STATUS_KEY });
+	// /hub 命令是可选依赖:文件缺失时降级(不注册该命令),绝不让 pi 启动失败。
+	// 注意:register 是同步函数,不能用顶层 await(会变成语法错误 "Unexpected reserved word 'await'",
+	// 让 pi 加载扩展直接失败)——因此包一层 IIFE 异步注册。
+	void (async () => {
+		try {
+			const mod = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "brief-hub-cmd.ts")).href);
+			mod.registerHubCommand(pi, { load, meta, STATUS_KEY });
+		} catch (error) {
+			pi.ui?.notify?.(`brief-hub: /hub 命令未注册(${error instanceof Error ? error.message : String(error)})`, "warning");
+		}
+	})();
 }

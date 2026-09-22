@@ -36,9 +36,12 @@ wired=0
 # 3.1 pi
 if [ -d "$AGENT_DIR" ]; then
   mkdir -p "$AGENT_DIR/extensions"
-  for f in brief-publisher.ts brief-subscriber.ts brief-hub-cmd.ts; do
-    cp -f "$REPO_DIR/extensions/$f" "$AGENT_DIR/extensions/$f" && wired=$((wired+1))
+  # 通配复制:以后拆分/新增扩展文件不必再改这里(硬编码清单曾导致"缺模块 -> pi 启动失败")
+  for f in "$REPO_DIR"/extensions/*.ts; do
+    cp -f "$f" "$AGENT_DIR/extensions/$(basename "$f")" && wired=$((wired+1))
   done
+  # 部署后自检:确认相对导入都能解析(缺模块会让 pi 启动失败)
+  [ -f "$REPO_DIR/scripts/check-extensions.mjs" ] && node "$REPO_DIR/scripts/check-extensions.mjs" "$AGENT_DIR/extensions" | sed 's/^/  [ext] /' 
   log "pi: 已安装投稿器 + 订阅器扩展(重启 pi 或 /reload 生效)"
 else
   log "pi: 未检测到 $AGENT_DIR,跳过(不影响 CLI)"

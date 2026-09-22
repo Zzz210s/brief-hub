@@ -75,6 +75,10 @@ const NOISE_PATTERNS: RegExp[] = [
 	/\[rtk\]|No hook installed/, // 第三方 CLI 的横幅(rtk)
 	/Could not find edits\[\d+\]/, // 编辑工具重试:同一改动下一条命令就成
 	/Dangerous command blocked/, // 权限门按设计拦截,不是失败
+	/Found \d+ occurrences? of edits\[/, // 编辑工具重试:定位失败,下一次就成
+	/Access denied: path/, // 沙箱按设计拒绝的路径
+	/Tool \S+ not found/, // 工具名写错/未注册:瞬时
+	/ctx_reduce not found/, // 同上(常见笔误)
 ];
 
 /** 代码/搜索输出被当成错误文本(多行 `123: xxx`) */
