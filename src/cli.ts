@@ -21,6 +21,7 @@ import { cmdList, cmdRead, cmdTag } from "./cli-commands.ts";
 import { buildBrief, clamp } from "./brief.ts";
 import { defaultSub, pollOnce } from "./inbox.ts";
 import { renderBrief } from "./match.ts";
+import { shouldPublish } from "./brief.ts";
 import { deriveTags } from "./tags.ts";
 import {
 	appendBrief,
@@ -56,6 +57,12 @@ async function run(): Promise<void> {
 				finalMessage: one(args.flags, "message"),
 				git: args.bool.has("pushed") ? { pushed: true, summary: one(args.flags, "summary") } : args.bool.has("committed") ? { committed: true, summary: one(args.flags, "summary") } : undefined,
 			};
+			// 策略:只有内容改变才投(出错/空跑不投);显式 --title 的手工简报视为有意发布
+			if (!one(args.flags, "title") && !shouldPublish(snapshot)) {
+				console.log("未投稿:没有文件夹改动(只投变更简报)。需要手工简报请加 --title");
+				process.exitCode = 1;
+				return;
+			}
 			const brief = buildBrief(snapshot);
 			if (one(args.flags, "title")) brief.title = clamp(one(args.flags, "title")!, 60);
 			// 显式补标签(--tag 可重复):用于"通知类"简报,让指定的订阅者能收到
