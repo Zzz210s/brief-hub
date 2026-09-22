@@ -72,6 +72,9 @@ const NOISE_PATTERNS: RegExp[] = [
 	/--check|sync-rules|sync-mcp/, // 我们自己的维护命令
 	/^\/usr\/bin\/bash: -c:/,
 	/TerminatorExpectedAtEndOfString/i,
+	/\[rtk\]|No hook installed/, // 第三方 CLI 的横幅(rtk)
+	/Could not find edits\[\d+\]/, // 编辑工具重试:同一改动下一条命令就成
+	/Dangerous command blocked/, // 权限门按设计拦截,不是失败
 ];
 
 /** 代码/搜索输出被当成错误文本(多行 `123: xxx`) */
