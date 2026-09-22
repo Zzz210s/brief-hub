@@ -79,9 +79,10 @@ test("pi 订阅器:before_agent_start 返回自定义消息(把简报送进模�
 
 test("errorClass:瞬时噪声不投,任务级失败照投", async () => {
 	const { errorClass } = await import("../src/errors.ts");
-	for (const noise of ["unexpected EOF while looking for", "[object Object]", "--check 原 AGENTS.md", "/usr/bin/bash: -c: line 1: x", "短"]) {
-		assert.equal(errorClass(noise), "transient", `应为瞬时:${noise}`);
+	for (const noise of ["unexpected EOF while looking for", "[object Object]", "--check 原 AGENTS.md", "/usr/bin/bash: -c: line 1: x", "短", "<stdin>:20: SyntaxWarning: invalid escape", "108: model.setCollapsed(ref, false); 637: private _fi"]) {
+		assert.equal(errorClass(noise), "noise", `应为噪声:${noise}`);
 	}
+	assert.equal(errorClass("ENOENT: no such file or directory, open F:/x.txt"), "tool", "缺文件是工具级");
 	for (const real of ["npm ERR! code ELIFECYCLE", "3 tests FAIL", "Traceback (most recent call last) 依赖缺失", "exit code 1: 构建失败"]) {
 		assert.equal(errorClass(real), "task", `应为任务级:${real}`);
 	}

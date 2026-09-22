@@ -61,23 +61,36 @@ export function errorText(value: unknown, limit = 200): string | undefined {
  *   task      任务级失败(构建/测试/CI/agent 自身报错)-> 值得投 sev:err
  *   transient 工具级瞬时失败(语法错/命令不存在/调试回显)-> 不投(或降级 warn)
  */
-const TRANSIENT_PATTERNS: RegExp[] = [
+const NOISE_PATTERNS: RegExp[] = [
 	/\[object Object\]/,
+	/SyntaxWarning|DeprecationWarning|RuntimeWarning/, // python 警告:自己的脚本回显
+	/^<stdin>:\d+:/, // heredoc 里的报错
 	/unexpected EOF/i,
 	/syntax error near/i,
 	/command not found/i,
-	/is not recognized as/i, // PowerShell/cmd 的同类
-	/--check|sync-rules|sync-mcp/, // 我们自己的维护命令回显
-	/^\/usr\/bin\/bash: -c:/, // bash 包装层报错
+	/is not recognized as/i,
+	/--check|sync-rules|sync-mcp/, // 我们自己的维护命令
+	/^\/usr\/bin\/bash: -c:/,
 	/TerminatorExpectedAtEndOfString/i,
-	/^\s*$/,
 ];
 
-export function errorClass(text: string | undefined): "task" | "transient" {
+/** 代码/搜索输出被当成错误文本(多行 `123: xxx`) */
+function looksLikeCodeOutput(text: string): boolean {
+	return (text.match(/(^|\s)\d{1,4}:\s/g) ?? []).length >= 2;
+}
+
+/**
+ * 错误三分类(纯函数):
+ *   noise 纯噪声(工具回显/警告/过短)-> 丢弃,不投
+ *   tool  工具级可行动失败(缺文件/权限/超时)-> 投 sev:warn,不占"必须处理"配额
+ *   task  任务级失败(构建/测试/CI/依赖)-> 投 sev:err
+ */
+export function errorClass(text: string | undefined): "noise" | "tool" | "task" {
 	const value = (text ?? "").trim();
-	if (value.length < 8) return "transient"; // 太短:没有可行动信息
-	for (const pattern of TRANSIENT_PATTERNS) if (pattern.test(value)) return "transient";
-	// 任务级信号:构建/测试/CI/依赖安装失败
+	if (value.length < 8) return "noise";
+	for (const pattern of NOISE_PATTERNS) if (pattern.test(value)) return "noise";
+	if (looksLikeCodeOutput(value)) return "noise";
+	if (/ENOENT|EACCES|EPERM|ETIMEDOUT|timed out|permission denied/i.test(value)) return "tool";
 	if (/npm ERR!|FAIL|assert|panic|Traceback \(most recent call last\)|exit code [1-9]/i.test(value)) return "task";
-	return "task"; // 默认按任务级处理(宁可多投,也不静默吞掉真实失败)
+	return "task";
 }

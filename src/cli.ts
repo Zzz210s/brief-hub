@@ -15,7 +15,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { doctorRows, formatDoctor, markHandling, one, parseArgs, pendingFor, pendingIds, publishFromTranscript, readAllBriefs } from "./cli-support.ts";
+import { doctorRows, formatDoctor, markHandling, one, orphansFor, parseArgs, pendingFor, pendingIds, publishFromTranscript, readAllBriefs } from "./cli-support.ts";
 import { buildBrief, clamp } from "./brief.ts";
 import { defaultSub, pollOnce } from "./inbox.ts";
 import { renderBrief } from "./match.ts";
@@ -190,6 +190,10 @@ async function run(): Promise<void> {
 			return;
 		}
 		case "status": {
+			if (args.bool.has("orphans")) {
+				console.log(await orphansFor());
+				return;
+			}
 			const stats = await hubStats();
 			if (args.bool.has("json")) {
 				console.log(JSON.stringify(stats, null, "\t"));

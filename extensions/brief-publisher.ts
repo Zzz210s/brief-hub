@@ -43,6 +43,7 @@ export default function (pi: any): void {
 	let changed = new Set<string>();
 	let commands: string[] = [];
 	let lastError: string | undefined;
+	let warnError: string | undefined; // 工具级失败:降级为 warn
 	let startedAt = Date.now();
 	let seq = 0;
 
@@ -50,6 +51,7 @@ export default function (pi: any): void {
 		changed = new Set<string>();
 		commands = [];
 		lastError = undefined;
+		warnError = undefined;
 		startedAt = Date.now();
 	};
 
@@ -69,11 +71,16 @@ export default function (pi: any): void {
 					durationMs: Date.now() - startedAt,
 					changedPaths: [...changed],
 					commands: commands.slice(-3),
-					errorText: lastError,
+					errorText: lastError ?? warnError,
 					seq: ++seq,
 				},
 				{},
 			);
+			// 工具级失败降级:不占接收端的"必须处理"配额(P2)
+			if (!lastError && warnError && brief.severity === "err") {
+				brief.severity = "warn";
+				brief.title = core.clamp(`工具失败: ${warnError}`, 60);
+			}
 			await core.appendBrief(brief);
 		} catch {
 			/* 投稿失败绝不影响会话 */
@@ -116,7 +123,9 @@ export default function (pi: any): void {
 				// 统一提取(对象/数组/工具结果包装)+ 分类:瞬时噪声不广播(P0)
 				const core = await import(pathToFileURL(join(REPO, "src", "index.ts")).href);
 				const text = core.errorText(event?.error ?? event?.result, 120);
-				if (text && core.errorClass(text) === "task") lastError = text;
+				const klass = text ? core.errorClass(text) : "noise";
+				if (klass === "task") lastError = text;            // 任务级 -> sev:err
+				else if (klass === "tool") warnError = text;       // 工具级 -> sev:warn(不占"必须处理")
 			}
 		} catch {
 			/* 忽略采集异常 */

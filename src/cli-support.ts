@@ -190,3 +190,34 @@ export async function pendingIds(sess: string, now = Date.now()): Promise<string
 		.filter((brief) => handling.shouldSurface(brief, state, now))
 		.map((brief) => brief.id);
 }
+
+/** P3:列出"没有任何会话处理过"的简报(孤儿)-> 一眼看出谁在持续产噪声 */
+export async function orphansFor(now = Date.now(), limit = 12): Promise<string> {
+	const [{ listBriefFiles, readState, listSubscriptions }, { readRecentBriefs }, schema, fs] = await Promise.all([
+		import("./store.ts"),
+		import("./store-config.ts"),
+		import("./schema.ts"),
+		import("node:fs/promises"),
+	]);
+	const subs = await listSubscriptions();
+	const states = await Promise.all(subs.map((sub) => readState(sub.sess)));
+	const touched = new Set<string>();
+	for (const state of states) {
+		for (const id of state.consumed ?? []) touched.add(id);
+		for (const id of Object.keys(state.handled ?? {})) touched.add(id);
+		for (const id of Object.keys(state.deferred ?? {})) touched.add(id);
+	}
+	const files = await listBriefFiles(7);
+	const briefs = await readRecentBriefs(files, schema.DEFAULTS.listTailBytes, 300);
+	const orphans = briefs.filter((brief) => !touched.has(brief.id));
+	if (orphans.length === 0) return "无孤儿简报(每条都被至少一个会话处理过)";
+	const lines = [`孤儿简报 ${orphans.length} 条(无会话 consumed/handled,可能是噪声或订阅不匹配):`];
+	for (const brief of orphans.slice(0, limit)) {
+		lines.push(`  ${new Date(brief.ts).toISOString().slice(5, 16)} [${brief.severity}] ${brief.title.slice(0, 46)}  (${brief.id})`);
+	}
+	if (orphans.length > limit) lines.push(`  … 另有 ${orphans.length - limit} 条`);
+	const bySeverity: Record<string, number> = {};
+	for (const brief of orphans) bySeverity[brief.severity] = (bySeverity[brief.severity] ?? 0) + 1;
+	lines.push(`按严重度:${Object.entries(bySeverity).map(([k, v]) => `${k}=${v}`).join(" ")}`);
+	return lines.join("\n");
+}
