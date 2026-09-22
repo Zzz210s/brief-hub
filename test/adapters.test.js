@@ -76,3 +76,20 @@ test("pi 订阅器:before_agent_start 返回自定义消息(把简报送进模�
 	assert.match(src, /composeInjection/, "复用统一措辞");
 	assert.match(src, /if \(!injected\) return;/, "无简报时不注入");
 });
+
+test("errorClass:瞬时噪声不投,任务级失败照投", async () => {
+	const { errorClass } = await import("../src/errors.ts");
+	for (const noise of ["unexpected EOF while looking for", "[object Object]", "--check 原 AGENTS.md", "/usr/bin/bash: -c: line 1: x", "短"]) {
+		assert.equal(errorClass(noise), "transient", `应为瞬时:${noise}`);
+	}
+	for (const real of ["npm ERR! code ELIFECYCLE", "3 tests FAIL", "Traceback (most recent call last) 依赖缺失", "exit code 1: 构建失败"]) {
+		assert.equal(errorClass(real), "task", `应为任务级:${real}`);
+	}
+});
+
+test("composeInjection:摘要自带协议表头时不再叠加旧 hint(避免双表头)", async () => {
+	const { composeInjection } = await import("../src/inject.ts");
+	const withProtocol = "【简报集散地 brief-hub · 待你处理】x";
+	assert.equal(composeInjection(withProtocol), withProtocol);
+	assert.ok(composeInjection("简报集散地:1 条相关").startsWith("简报集散地 brief-hub:"));
+});

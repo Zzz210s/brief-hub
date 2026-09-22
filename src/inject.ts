@@ -17,6 +17,8 @@ export const PROTOCOL_HINT =
 export function composeInjection(digest: string): string | undefined {
 	const text = String(digest ?? "").trim();
 	if (!text) return undefined;
+	// 摘要自带协议表头时不再叠加旧 hint(否则一次注入出现两个表头)
+	if (text.includes("【简报集散地")) return text;
 	return `${PROTOCOL_HINT}\n${text}`;
 }
 

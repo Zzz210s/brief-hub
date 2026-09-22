@@ -113,21 +113,10 @@ export default function (pi: any): void {
 			}
 			const failed = event?.isError ?? event?.error ?? event?.result?.isError;
 			if (failed) {
-				// 错误文本要可读:对象直接 String() 会得到 "[object Object]"
-				const raw = typeof event?.error === "string" ? event.error : (event?.result?.content ?? event?.result ?? "");
-				const text =
-					typeof raw === "string"
-						? raw
-						: Array.isArray(raw)
-							? raw.map((part) => (typeof part === "string" ? part : (part?.text ?? ""))).join(" ")
-							: (() => {
-									try {
-										return JSON.stringify(raw);
-									} catch {
-										return "任务失败";
-									}
-								})();
-				lastError = (text || "任务失败").slice(0, 200);
+				// 统一提取(对象/数组/工具结果包装)+ 分类:瞬时噪声不广播(P0)
+				const core = await import(pathToFileURL(join(REPO, "src", "index.ts")).href);
+				const text = core.errorText(event?.error ?? event?.result, 120);
+				if (text && core.errorClass(text) === "task") lastError = text;
 			}
 		} catch {
 			/* 忽略采集异常 */

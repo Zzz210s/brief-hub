@@ -34,3 +34,4 @@ export {
 export { PROTOCOL_HINT, composeInjection, suggestedTagsFor } from "./inject.ts";
 export { DEFER_RESURFACE_MS, classify, groupPending, handlingStats, renderProtocol, shouldSurface } from "./handling.ts";
 export type { ActionClass, HandlingState, PendingItem } from "./handling.ts";
+export { errorClass, errorText } from "./errors.ts";

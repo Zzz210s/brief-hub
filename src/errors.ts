@@ -50,3 +50,34 @@ export function errorText(value: unknown, limit = 200): string | undefined {
 	if (USELESS.has(raw)) return undefined;
 	return raw.length > limit ? raw.slice(0, limit) : raw;
 }
+
+/**
+ * 错误分类(纯函数):决定这条失败值不值得广播给所有订阅者。
+ *
+ * 背景(2026-09-22 实测):投稿器把"会话中途某条命令语法错"也当任务失败投成 sev:err,
+ * 于是 `unexpected EOF`、`ENOENT: …`、我们自己的调试命令回显都变成"必须处理",
+ * 打扰了 45 个会话。这类瞬时失败下一条命令就修好,不该占用别人的注意力。
+ *
+ *   task      任务级失败(构建/测试/CI/agent 自身报错)-> 值得投 sev:err
+ *   transient 工具级瞬时失败(语法错/命令不存在/调试回显)-> 不投(或降级 warn)
+ */
+const TRANSIENT_PATTERNS: RegExp[] = [
+	/\[object Object\]/,
+	/unexpected EOF/i,
+	/syntax error near/i,
+	/command not found/i,
+	/is not recognized as/i, // PowerShell/cmd 的同类
+	/--check|sync-rules|sync-mcp/, // 我们自己的维护命令回显
+	/^\/usr\/bin\/bash: -c:/, // bash 包装层报错
+	/TerminatorExpectedAtEndOfString/i,
+	/^\s*$/,
+];
+
+export function errorClass(text: string | undefined): "task" | "transient" {
+	const value = (text ?? "").trim();
+	if (value.length < 8) return "transient"; // 太短:没有可行动信息
+	for (const pattern of TRANSIENT_PATTERNS) if (pattern.test(value)) return "transient";
+	// 任务级信号:构建/测试/CI/依赖安装失败
+	if (/npm ERR!|FAIL|assert|panic|Traceback \(most recent call last\)|exit code [1-9]/i.test(value)) return "task";
+	return "task"; // 默认按任务级处理(宁可多投,也不静默吞掉真实失败)
+}
