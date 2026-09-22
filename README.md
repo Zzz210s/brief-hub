@@ -2,55 +2,88 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-A local **brief hub** for every AI session on your machine: each session publishes a tagged brief when a task finishes, other sessions subscribe by **tags**, automatically read what is relevant to them, mark it consumed, and never check it again.
+A local **brief hub** for the AI sessions on one machine: every session publishes a tagged brief when a task finishes, other sessions subscribe by **tags**, automatically read what concerns them, and never see it twice.
 
-The single design goal: **coordination that costs almost no tokens**.
-
-**Standalone first**: the hub, the CLI and the protocol need **no AI tool at all** — `bh publish` / `bh sub add` / `bh digest` work on their own. The pi / Claude Code / Codex / opencode integrations are *optional* adapters that are wired in only when that tool is detected.
+Coordination that costs almost no tokens. The hub, the CLI and the protocol need **no AI tool at all** — the pi / Claude Code / Codex / opencode integrations are optional adapters.
 
 ## What it solves
 
-When you run several AI sessions in parallel they are blind to each other: session A changes a GitHub repo or a system config, while session B (the one that "owns" GitHub or "owns" PC tuning) never learns about it. brief-hub is a publish/subscribe channel that only puts content into a context **when it is actually relevant**.
+Several AI sessions running side by side are blind to each other. One changes a GitHub repo or a system config; the session that "owns" GitHub or PC tuning never learns about it. brief-hub is a publish/subscribe channel that puts content into a context **only when it is relevant**, and keeps the bill small.
 
 ## How it works
 
 ```
-session A finishes ──► publishes a tagged brief ──► ~/.ai-brief-hub/briefs/YYYY-MM-DD.jsonl
-                                                          │
-session B (subscribed to git/config) ──► polls; pure-code tag match ──► matched briefs
-                                          delivered as a title digest + marked consumed
-                                                          │
-                                        next poll: the same brief is never detected again
+session A finishes ──► tagged brief ──► ~/.ai-brief-hub/briefs/YYYY-MM-DD.jsonl   (archive)
+                                            └─► shards/<tag>.jsonl                (shared index)
+session B (subscribed) ──► pure-code tag match ──► title digest injected ──► marked consumed
+                                                          └─ next poll: never detected again
 ```
 
-## The six token-saving mechanisms
+## Noise control
+
+The failure mode of any notification system is that noise crowds out signal. Three gates, all in the core so **every harness inherits them**:
+
+| Class | Examples | What happens |
+|---|---|---|
+| **noise** | `[object Object]`, `[rtk] … No hook installed`, `SyntaxWarning`, `unexpected EOF`, `Could not find edits[0]`, `Dangerous command blocked`, our own maintenance commands, multi-line `123: code` output | **dropped** — no brief at all |
+| **tool** | `ENOENT`, `EACCES`, timeouts, permission errors | published as `sev:warn` → lands in "check" / "fyi", never in "must handle" |
+| **task** | `npm ERR!`, test `FAIL`, `Traceback`, `exit code N` | published as `sev:err` → must handle |
+
+Other waste that was measured and removed:
+
+- **Self-briefs are suppressed**: a session never receives a brief it published itself.
+- **The receiver protocol is sent once**; later injections use a one-line header (saves ~120 tokens each time).
+- **First-run alignment is explicit** (`alignedAt`), so a hub that is empty at alignment time no longer swallows the next batch.
+- **`bh purge`** removes historical noise for good: the matching briefs are written to a file, that file goes to the **OS recycle bin**, then the archive and shards are rewritten. Sessions' `unread` lists are cleaned too.
+- **`bh status --orphans`** lists briefs nobody ever handled — the way to find a remaining noise source.
+
+## The token budget
 
 | Mechanism | How | Effect |
 |---|---|---|
-| **Zero-token matching** | tag set operations + arithmetic scoring, no model call | deciding relevance is free |
-| **Zero extra tokens on publish** | title/facts are derived from artifacts the session already produced (changed paths, commands, error text) — no LLM summarisation | publishing is free |
-| **Headline first** | level 1 delivers only a title digest (measured ≈17 tokens per brief); the body is fetched on demand with `bh read <id>` | irrelevant content never enters the context |
-| **Incremental reads** | the cursor is a **per-file byte offset**; when a file has not grown, nothing is read and nothing is injected | idle sessions cost ~0 |
-| **Coalescing** | same dedupe key within a 10-minute window merges into one entry (20 pushes → 1 brief) | no notification storms |
-| **Hourly budget** | default 2000 tokens/hour; overflow is queued by score and reported as a single "N more not expanded" line | bursts cannot swamp the context |
+| Zero-token matching | tag set operations + arithmetic scoring, no model call | deciding relevance is free |
+| Zero extra tokens on publish | titles and facts are derived from artifacts the session already produced | publishing is free |
+| Headline first | level 1 delivers a title digest (measured ≈17 tokens per brief); bodies come on demand via `bh read <id>` | irrelevant content never enters the context |
+| Incremental reads | per-file **byte cursors**; a file that did not grow is not read at all | idle sessions cost ~0 |
+| Coalescing | same dedupe key inside a 10-minute window merges (20 pushes → 1 brief) | no notification storms |
+| Hourly budget | 2000 tokens/hour by default; overflow is queued by score and reported as a count | bursts cannot swamp a context |
 
-The first run **only aligns the cursor and delivers no history** (so you never get a flood of old briefs).
+Measured on 8 subscribers with 20 briefs arriving one per minute:
 
-
-### Scaling: fanout-aware batching (why more sessions does not mean more tokens)
-
-Every session that subscribes to a broad tag (say `git`) would otherwise be interrupted by the same brief. brief-hub tracks a **fanout index** (`index/fanout.json`, refreshed when subscriptions change) and, when a brief's tags have **>= 4 subscribers** (`fanoutBatchK`), `auto` subscriptions switch to **hourly batching**: one digest per hour that expands the top 3 titles and summarises the rest as a count. Errors (`sev:err`) and briefs that address a session directly (`sess:<name>`) are always delivered immediately.
-
-Measured on 8 subscribers, 20 briefs arriving one per minute (poll every minute):
-
-| Mode | Injected messages | Injected tokens |
+| Mode | Injections | Tokens |
 |---|---|---|
-| `immediate` (old behaviour) | 152 | 3120 |
-| `auto` (fanout 8 -> hourly) | **8** | **160** |
+| `immediate` | 152 | 3120 |
+| `auto` (fanout ≥ 4 → hourly batching) | **8** | **160** |
 
-Nothing is dropped: every brief stays in the hub, remains listed as unread, and is readable with `bh list --unread` / `bh read <id>`; only the timing of the interruption changes.
+## Scaling: fanout batching + shared shards
 
-Other IO-side reductions: `bh list` / `/hub list` read a bounded tail (`listTailBytes`, 64 KB) instead of whole files, and the token budget is charged against the **rendered** digest rather than the sum of every matched item.
+**Delivery.** When a brief's tags have **≥ 4 subscribers** (`fanoutBatchK`), `auto` subscriptions switch to hourly batching: one digest per hour, top 3 titles expanded, the rest counted. Errors (`sev:err`) and briefs addressed to a session (`sess:<name>`) are always immediate.
+
+**IO.** Publishing writes each brief once into `shards/<tag>.jsonl` (along its tag chain), so every subscriber of a tag reads **the same file** instead of re-scanning the archive. A shard whose `size`/`mtime` is unchanged is skipped entirely.
+
+Measured (8 subscribers × 20 briefs):
+
+| Metric | Before | After |
+|---|---|---|
+| Bytes read | 853,248 | **77,768** |
+| 160 idle polls | — | **0 bytes read, 160 shards skipped** |
+
+## Receiver protocol
+
+Injection arrives on the session's **next turn** (extensions cannot wake an idle session). Each brief is classified for the receiver:
+
+| Class | Trigger | Expectation |
+|---|---|---|
+| **act** | `sev:err`, addressed by `sess:`, carries a suggested action | must handle; errors cannot merely be deferred |
+| **check** | same repo / same directory / exact tag hit | read the body and verify |
+| **fyi** | parent-tag hit, stale entry | read and move on |
+
+```bash
+bh read <id>                          # full brief: facts / artifacts / suggested action / source
+bh handle <id> --note "conclusion"    # handled: never surfaces again
+bh defer <id>                         # defer: resurfaces after 4 hours
+bh pending --sess=<id>                # current queue, grouped by class
+```
 
 ## Install
 
@@ -58,105 +91,94 @@ Other IO-side reductions: `bh list` / `/hub list` read a bounded tail (`listTail
 bash setup.sh
 ```
 
-It creates `~/.ai-brief-hub/`, installs the `bh` command, and wires the adapters of whichever AI tools it detects (pi / Claude Code / Codex / opencode). Nothing else is required — Node >= 24 is the only dependency.
+Creates `~/.ai-brief-hub/`, installs the `bh` command (bash + cmd), and wires the adapters of whichever AI tools it detects. Node ≥ 24 is the only dependency.
+
+| Harness | Publish | Consume |
+|---|---|---|
+| **pi** | extension `brief-publisher` (on settle / error) | extension `brief-subscriber` (injects on the next turn, `/hub`) |
+| **Claude Code** | hook `adapters/claude/hook.mjs` (`PostToolUse` accumulates → `Stop`/`SessionEnd` publishes) | same hook, `UserPromptSubmit` prints the digest (needs `disableAllHooks: false`) |
+| **Codex** | `notify` hook `adapters/codex/notify.mjs` (payload is the last argv; also mines the rollout) | `bh digest` |
+| **opencode** | plugin `adapters/opencode/plugin.js` (`session.idle` / `session.error`) | same plugin, `chat.message` injects into `output.parts` |
+| anything else | `bh publish --tool=<name> --sess-id=<id> …` | `bh digest --sess=<id>` |
+
+Adding a harness: turn its facts into a snapshot and call `bh publish` (or `bh publish-from <file> --harness <name>`); call `bh digest --sess=<id>` to consume; `bh sub add <tag> --sess=<id>` to subscribe. Tag derivation, noise filtering, coalescing, budget and consumed-marking all happen in the core.
 
 ## Usage
 
 ```bash
-bh doctor                                   # self-check: dirs, command, detected harnesses
-bh publish --tool manual --sess-id demo --title "first brief" --changed a.txt
-bh sub add git config --sess=<session>      # subscribe by domain tag
-bh sub add "repo:owner/name" --sess=<session>
-bh sub add sev:err --sess=<session>         # errors only
-bh digest --sess=<session>                  # print pending digest (marks it consumed)
-bh list --unread --sess=<session>
-bh read <id>                                # full brief
-bh status                                   # hub overview: briefs / subs / per-consumer unread + budget
-bh poll --sess=<session>                    # run one polling round manually (debugging)
+bh doctor                             # self-check: dirs, command, detected harnesses
+bh status                             # overview: briefs, subscriptions, per-consumer unread + budget
+bh status --orphans                   # briefs nobody handled (find noise sources)
+bh list [--unread] [--sess=<id>]      # recent briefs (bounded tail read)
+bh read <id>                          # full brief
+bh publish --tool manual --sess-id demo --title "first brief" --changed a.txt [--tag system]
+bh sub add git config "repo:owner/name" --sess=<id>
+bh digest --sess=<id>                 # print pending digest and mark it consumed
+bh poll --sess=<id>                   # one polling round (debugging)
+bh purge --noise                      # preview: drop noise-class briefs
+bh purge --noise --yes                # execute: purged briefs go to the OS recycle bin
+bh purge --kind task.error --before 2026-09-22 --yes
 ```
 
 ## Tag system
 
-| Namespace | Examples | Source |
+| Namespace | Examples | Derived from |
 |---|---|---|
-| Domain | `git` `git.push` `git.commit` `config` `deps` `system` `github` `pi.config` | derived from executed commands and changed paths |
+| Domain | `git`, `git.push`, `config`, `deps`, `system`, `github`, `pi.config` | executed commands, changed paths |
 | Repo | `repo:owner/name` | `.git/config` of the session directory |
 | Project | `proj:<dir>` | working directory name |
-| Tool / session | `tool:pi` `sess:<name>` | session metadata |
-| Severity | `sev:err` `sev:warn` `sev:info` | error ⇒ err |
-| Event kind | `task.done` `task.error` `git.push` | event type |
+| Tool / session | `tool:pi`, `sess:<name>` | session metadata |
+| Severity | `sev:err`, `sev:warn`, `sev:info` | error classification |
+| Kind | `task.done`, `task.error`, `git.push` | event type |
 
-**Subscribing to a parent matches its children**: subscribing to `git` also receives `git.push` / `git.commit`.
-
-## Harness coverage (cross-AI)
-
-The core is harness-agnostic; each AI only needs a thin adapter.
-
-| Harness | Publish | Consume | Status |
-|---|---|---|---|
-| **pi** | extension `brief-publisher` (auto on finish / error) | extension `brief-subscriber` (poll → title digest → `/hub`) | implemented |
-| **Claude Code** | hook `adapters/claude/hook.mjs` (`PostToolUse` accumulates → `Stop`/`SessionEnd` publishes; parses the session JSONL as a fallback) | same hook, `UserPromptSubmit` branch: prints the digest to stdout, which Claude injects as context | implemented (needs `disableAllHooks: false`) |
-| **Codex** | `notify` hook: `adapters/codex/notify.mjs` (Codex passes the `agent-turn-complete` JSON as the last argv; the adapter also mines the rollout for tool facts) | `bh digest` (or run it yourself) | implemented |
-| **opencode** | plugin `adapters/opencode/plugin.js` (`session.idle` / `session.error`) | same plugin, `chat.message`: injects the digest into `output.parts` before the message is sent | implemented |
-| any other CLI | `bh publish --tool=<name> --sess-id=<id> …` | `bh digest --sess=<id>` | implemented (generic contract) |
-
-### Adding a harness in three steps
-
-1. **Publish** — turn that harness' facts into a `SessionSnapshot` (changed paths / commands / error / cwd / session id) and call `bh publish` (or `bh publish-from <session-file> --harness <name>`); the core handles tag derivation and dedupe.
-2. **Consume** — call `bh digest --sess=<that session id>`; matching, budget, coalescing and consumed-marking already happen inside. Inject it wherever the harness allows (before a user message, on idle), otherwise let the human run it.
-3. **Subscribe** — `bh sub add git config --sess=<that session id>`. All harnesses share the same subscription data (`~/.ai-brief-hub/subs/`).
+Subscribing to a parent matches its children: `git` also receives `git.push` / `git.commit`.
 
 ## Environment variables
 
 | Variable | Effect |
 |---|---|
-| `BRIEF_HUB=0` | disable publishing and subscribing completely |
+| `BRIEF_HUB=0` | disable publishing and subscribing |
 | `BRIEF_HUB_HOME` | repository directory (default `~/brief-hub`) |
-| `BRIEF_HUB_HOME_OVERRIDE` | override the **data** directory (default `~/.ai-brief-hub`; used by tests) |
+| `BRIEF_HUB_HOME_OVERRIDE` | override the **data** directory (default `~/.ai-brief-hub`) |
 
-## Architecture (every file ≤200 lines)
+## Architecture
 
 ```
-src/schema.ts       data model + defaults (pure)
-src/tags.ts         tag derivation, hierarchy, scoring (pure)
-src/brief.ts        brief construction (pure, zero extra tokens)
-src/match.ts        delivery plan: filter/score/coalesce/budget + rendering (pure)
-src/transcript.ts   cross-harness fact extraction (tool-call accumulation, Codex payload, generic JSONL)
-src/inbox.ts        one polling round (io)
-src/store.ts        append-only JSONL + cursor reads (io)
-src/store-config.ts subscriptions / state / config / stats (io)
-src/cli.ts          CLI commands
-src/cli-support.ts  argument parsing, reading helpers, doctor
-extensions/         two pi extensions (publisher / subscriber)
-adapters/claude/    Claude Code hook + idempotent settings merge
-adapters/codex/     Codex notify hook
-adapters/opencode/  opencode plugin
-test/               31 cases (pure logic + adapter end-to-end with a temp hub)
+src/schema.ts        data model + defaults (pure)
+src/tags.ts          tag derivation, hierarchy, scoring (pure)
+src/errors.ts        failure-text extraction + noise/tool/task classification (pure)
+src/brief.ts         brief construction, noise filtering, shouldPublish (pure)
+src/match.ts         delivery plan: filter/score/coalesce/budget, digest rendering (pure)
+src/handling.ts      receiver protocol: classify / shouldSurface / renderProtocol (pure)
+src/purge.ts         purge selection + JSONL line stripping (pure)
+src/transcript.ts    cross-harness fact extraction (Codex payload, generic JSONL)
+src/shards.ts        tag shards: write once, many readers, mtime skip
+src/inbox.ts         one polling round (io)
+src/store.ts         append-only JSONL + cursor reads (io)
+src/store-config.ts  subscriptions / state / config / fanout index / stats (io)
+src/recycle.ts       move a file to the OS recycle bin
+src/inject.ts        injection wording shared by all harnesses
+src/cli.ts           CLI commands
+src/cli-support.ts   argument parsing, readers, doctor, orphans, purge
+extensions/          pi publisher + subscriber
+adapters/            Claude hook · Codex notify · opencode plugin
+test/                58 cases (pure logic + adapter end-to-end on a temp hub)
 ```
 
 ## Verification
 
 ```bash
-node --test test/*.test.js      # 31/31
+node --test test/*.test.js      # 58/58
 ```
 
-Cross-harness round trip (real run):
-
-```
-[1] Claude SessionStart          -> subscription created for that session
-[2] another session publishes    -> published b-…-f8b1 [git.push] new Codex/opencode adapters
-[3] Claude UserPromptSubmit      -> brief hub: 1 relevant  - [git.push] … (b-…-f8b1)
-[4] again                        -> (no output)   <- already consumed, not repeated
-[5] bh status                    -> consumer claude-live-…: unread 0 · consumed 1 · budget 16
-```
-
-Standalone check (temporary HOME, no AI tool installed): `setup.sh` created the hub, installed `bh`, wired 0 AI adapters, and the CLI round trip worked.
+Cross-harness round trip (real run): a pi session publishes → a Claude session's `UserPromptSubmit` prints `1 relevant`, marks it consumed, and the next round prints nothing. Standalone check (temporary `HOME`, no AI tool installed): `setup.sh` created the hub, installed `bh`, wired 0 adapters, and the CLI round trip worked.
 
 ## Boundaries
 
-- Local only; cross-machine is out of scope for v1 (a git-backed or ntfy transport could be added later)
-- Brief titles are rule-generated (no model call); titles ≤60 chars, at most 3 facts — bounded by design
-- A consumer only ever sees briefs inside its own subscription; everything else never enters a context
+- Local only; cross-machine transport is out of scope (a git-backed or ntfy transport could be added).
+- Titles are rule-generated, ≤60 chars, at most 3 facts — no model call.
+- A consumer only ever sees briefs inside its own subscription.
+- Extensions cannot wake an idle session; delivery happens on its next turn.
 
 ## License
 
