@@ -136,3 +136,31 @@ test("peek:只窥视不消费 —— 简报不会被状态徽标吃掉", async (
 		assert.ok(after.consumed.includes("b-peek-0002"), "真正注入后才标已读");
 	});
 });
+
+test("自简报抑制:会话不会收到自己刚投的简报", async () => {
+	await withTempHub(async () => {
+		await writeSubscription({ sess: "self", tags: ["git"], delivery: "l1" });
+		await pollOnce("self", { now: Date.now() }); // 对齐
+		// 自己投的
+		await appendBrief(buildBrief(snapshot({ sessionId: "self", sessionName: "self" }), { id: "b-self-0001" }));
+		// 别人投的
+		await appendBrief(buildBrief(snapshot({ sessionId: "other", sessionName: "other" }), { id: "b-other-0001" }));
+		const result = await pollOnce("self", { now: Date.now() + 1000 });
+		assert.ok(!result.digest.includes("b-self-0001"), "不得出现自简报");
+		assert.ok(result.digest.includes("b-other-0001"), "别人的简报照常");
+	});
+});
+
+test("协议只发一次:第二次注入用精简表头(省 token)", async () => {
+	await withTempHub(async () => {
+		await writeSubscription({ sess: "c", tags: ["git"], delivery: "l1" });
+		await pollOnce("c", { now: Date.now() });
+		await appendBrief(buildBrief(snapshot({ sessionId: "x" }), { id: "b-p-0001" }));
+		const first = await pollOnce("c", { now: Date.now() + 1000 });
+		assert.match(first.digest, /【简报集散地/, "首次给完整协议");
+		await appendBrief(buildBrief(snapshot({ sessionId: "y" }), { id: "b-p-0002" }));
+		const second = await pollOnce("c", { now: Date.now() + 2000 });
+		assert.match(second.digest, /处理协议见你的指令文件/, "之后精简");
+		assert.ok(!second.digest.includes("不要只回复编号"), "不再重复整段协议");
+	});
+});

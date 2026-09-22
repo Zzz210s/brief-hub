@@ -79,6 +79,10 @@ export interface SubState {
 	consumed: string[];
 	/** 已处理:id -> 处理时间(处理完的不再浮现) */
 	handled?: Record<string, number>;
+	/** 首次对齐完成的时间(不能用"游标非空"推断:集散地为空时对齐后游标仍是空的) */
+	alignedAt?: number;
+	/** 协议全文是否已发过(发过一次后只给精简表头,省 token) */
+	protocolSent?: boolean;
 	/** 已延迟:id -> 延迟时间(到点后重新提醒) */
 	deferred?: Record<string, number>;
 	/** 已消费时间戳,用于裁剪 */

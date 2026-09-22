@@ -49,7 +49,7 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 	const config = await readConfig();
 	const files = await listBriefFiles(3);
 	const cursors: Record<string, number> = state.cursors ?? {};
-	const firstRun = Object.keys(cursors).length === 0 && !options.includeHistory;
+	const firstRun = !state.alignedAt && !options.includeHistory; // 显式标记,避免集散地为空时反复"首次对齐"
 
 	// 读共享分片(一条简报按标签链写入,同一标签的所有订阅者读**同一份**文件);
 	// mtime/size 未变化的分片本轮完全不读(零 IO)。
@@ -80,14 +80,18 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 	const trimmedCursors = Object.fromEntries(Object.entries(nextCursors).filter(([file]) => keep.has(file)));
 
 	if (firstRun) {
-		const next = await writeState(sess, { ...state, cursors: trimmedCursors, seen: shardRead.seen });
+		const next = await writeState(sess, { ...state, cursors: trimmedCursors, seen: shardRead.seen, alignedAt: now });
 		return { sess, reason: "首次运行:已对齐游标(不投递历史)", digest: "", scanned: 0, delivered: 0, state: next };
 	}
 
+	// 候选过滤(实测两个浪费来源):
+	//   1) 自简报 —— 会话自己刚投的,它已经知道,再读一遍纯属浪费
+	//   2) 已处理/已延迟/已投递过 —— 不再浮现
+	const candidates = incoming.filter((brief) => brief.src?.sess !== sess && shouldSurface(brief, state, now));
 	const fanoutIndex = await readFanoutIndex();
-	const fanout = maxFanoutFor([...new Set(incoming.flatMap((brief) => brief.tags ?? []))], fanoutIndex);
+	const fanout = maxFanoutFor([...new Set(candidates.flatMap((brief) => brief.tags ?? []))], fanoutIndex);
 	const plan = planDelivery({
-		incoming: incoming.sort((a, b) => a.ts - b.ts),
+		incoming: candidates.sort((a, b) => a.ts - b.ts),
 		sub: options.force && sub.quietHours ? { ...sub, quietHours: undefined } : sub,
 		state,
 		now,
@@ -99,7 +103,9 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 		action: classify(item.brief, sub),
 		resurfaced: Boolean(state.deferred?.[item.brief.id]),
 	}));
-	const digest = pendingItems.length ? (renderProtocol(pendingItems) ?? renderDigest(plan)) : "";
+	const digest = pendingItems.length
+		? (renderProtocol(pendingItems, { compact: Boolean(state.protocolSent) }) ?? renderDigest(plan))
+		: "";
 
 	// 只有投递出去的才标已读;被预算压下的留在 unread 供后续展开
 	const deliveredIds = plan.items.flatMap((item) => [item.brief.id, ...(item.mergedFrom ?? [])]);
@@ -111,6 +117,8 @@ export async function pollOnce(sess: string, options: PollOptions = {}): Promise
 	const newlyUnread = [...new Set([...(state.unread ?? []), ...deliveredIds, ...plan.matchedIds.filter((id) => !deliveredIds.includes(id))])];
 	let next: SubState = {
 		...state,
+		alignedAt: state.alignedAt ?? now,
+		protocolSent: state.protocolSent || pendingItems.length > 0,
 		cursors: trimmedCursors,
 		seen: shardRead.seen,
 		unread: newlyUnread.slice(0, 200),
