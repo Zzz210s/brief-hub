@@ -75,11 +75,10 @@ export function makeId(now = new Date(), random: () => number = Math.random): st
 /** 从会话快照构建简报(纯函数,可单测) */
 /** 是否值得投一条简报(纯函数):没有改动/命令/错误/标题时不投 */
 export function shouldPublish(snapshot: SessionSnapshot & { title?: string }): boolean {
-	if (snapshot.title) return true;
-	if (snapshot.changedPaths?.length) return true;
-	if (snapshot.commands?.length) return true;
-	const klass = snapshot.errorText ? errorClass(snapshot.errorText) : "none";
-	return klass === "task" || klass === "tool";
+	// 只投"内容改变"的简报:必须有文件夹改动。
+	// 出错简报与噪声简报一律不投(2026-09-22 用户要求):错误信息进不了别人的上下文,
+	// 会话需要知道失败时自己看输出即可;跨会话有价值的是"某处被改动了"。
+	return (snapshot.changedPaths?.length ?? 0) > 0;
 }
 
 /** 改动路径的最长公共目录(去掉末段文件名)——即"被改动的那个文件夹" */
@@ -100,22 +99,19 @@ export function buildBrief(snapshot: SessionSnapshot, options: { now?: number; i
 	const now = options.now ?? Date.now();
 	// 噪声过滤放在核心层:pi 扩展 / Claude hook / Codex notify / opencode 插件 / bh publish
 	// 全都经过这里,不必各自实现一遍(实测过适配器漏过滤会导致噪声广播)
-	const klass = snapshot.errorText ? errorClass(snapshot.errorText) : "none";
-	const dropped = klass === "noise";
-	const warnOnly = klass === "tool";
-	const effectiveError = dropped ? undefined : snapshot.errorText;
-	const failed = Boolean(effectiveError);
+	// 出错文本不参与投稿决策(只投变更简报);保留分类仅用于 bh purge --noise 清理历史
+	const failed = false;
 	const scope = changeScope(snapshot.changedPaths ?? []);
 	// 只投一种简报:变更简报(触发条件=某个文件夹被改动,见投稿器)
 	const kind: Kind = "change";
-	// 工具级失败降为 warn:不占接收端的"必须处理"配额
-	const severity: Severity = failed ? (warnOnly ? "warn" : "err") : "info";
+	const severity: Severity = "info"; // 只有变更简报,严重度不再区分
 
-	const title = failed
-		? clamp(`${warnOnly ? "工具失败" : "任务出错"}: ${effectiveError ?? ""}`, MAX_TITLE)
-		: clamp(scope ? `变更 ${scope} · ${(snapshot.changedPaths ?? []).length} 个文件${snapshot.git?.pushed ? " · 已推送" : ""}` : buildTitle(snapshot), MAX_TITLE);
+	const title = clamp(
+		scope ? `变更 ${scope} · ${(snapshot.changedPaths ?? []).length} 个文件${snapshot.git?.pushed ? " · 已推送" : ""}` : buildTitle(snapshot),
+		MAX_TITLE,
+	);
 
-	const facts = failed ? buildErrorFacts({ ...snapshot, errorText: effectiveError }) : buildDoneFacts(snapshot);
+	const facts = buildDoneFacts(snapshot);
 	const tags = deriveTags({
 		tool: snapshot.tool,
 		sessionName: snapshot.sessionName,

@@ -56,8 +56,8 @@ export default function (pi: any): void {
 	};
 
 	const publish = async (): Promise<void> => {
-		// 只投变更简报:必须有文件夹改动,或任务级/工具级失败(纯跑命令不投)
-		const hasWork = changed.size > 0 || Boolean(lastError) || Boolean(warnError);
+		// 只投变更简报:必须有文件夹改动(出错/纯跑命令都不投)
+		const hasWork = changed.size > 0;
 		if (!hasWork) return;
 		try {
 			const core = await import(pathToFileURL(join(REPO, "src", "index.ts")).href);

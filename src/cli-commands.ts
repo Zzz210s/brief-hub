@@ -1,5 +1,6 @@
 import { one, parseArgs, readAllBriefs } from "./cli-support.ts";
 import { listBriefFiles, listSubscriptions, readSubscription, writeSubscription } from "./store.ts";
+import { renderBrief } from "./match.ts";
 
 /** 从 cli.ts 抽出的命令实现(保持单文件 ≤200 行) */
 

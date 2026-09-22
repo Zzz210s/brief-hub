@@ -37,6 +37,9 @@ wired=0
 if [ -d "$AGENT_DIR" ]; then
   mkdir -p "$AGENT_DIR/extensions"
   # 通配复制:以后拆分/新增扩展文件不必再改这里(硬编码清单曾导致"缺模块 -> pi 启动失败")
+  rm -f "$AGENT_DIR/extensions/brief-hub-cmd.ts"   # 旧位置残留(根级会被当扩展加载)
+  mkdir -p "$AGENT_DIR/extensions/brief-hub"
+  cp -f "$REPO_DIR"/extensions/brief-hub/*.ts "$AGENT_DIR/extensions/brief-hub/" 2>/dev/null || true
   for f in "$REPO_DIR"/extensions/*.ts; do
     cp -f "$f" "$AGENT_DIR/extensions/$(basename "$f")" && wired=$((wired+1))
   done

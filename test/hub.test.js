@@ -42,11 +42,19 @@ test("buildBrief:推送场景生成 git.push 简报与相关标签,且不调用�
 	assert.ok(brief.title.length <= 60, "标题有界");
 });
 
-test("buildBrief:出错场景生成 task.error(高优先级)", () => {
-	const brief = buildBrief(snapshot({ errorText: "pnpm ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH", commands: ["pnpm install -g pi"] }));
-	assert.equal(brief.kind, "change");
-	assert.equal(brief.severity, "err");
-	assert.ok(brief.tags.includes("sev:err"));
+test("buildBrief:出错不再产出错误简报(只投变更)", () => {
+	const brief = buildBrief(snapshot({ errorText: "pnpm ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH", changedPaths: ["config-ai/a.ts"] }));
+	assert.equal(brief.severity, "info", "严重度恒为 info");
+	assert.equal(brief.kind, "change", "类型恒为变更");
+	assert.match(brief.title, /变更/, `标题应为变更简报:${brief.title}`);
+	assert.ok(!brief.title.includes("任务出错"));
+});
+
+test("shouldPublish:只有内容改变才投(出错/纯命令都不投)", async () => {
+	const { shouldPublish } = await import("../src/brief.ts");
+	assert.equal(shouldPublish(snapshot({ changedPaths: [], errorText: "npm ERR! 构建失败" })), false, "只出错不投");
+	assert.equal(shouldPublish(snapshot({ changedPaths: [], commands: ["git status"] })), false, "只跑命令不投");
+	assert.equal(shouldPublish(snapshot({ changedPaths: ["a.ts"] })), true, "有改动就投");
 });
 
 test("clamp/makeId/dedupeKey:有界与合并键", () => {
@@ -165,28 +173,4 @@ test("协议只发一次:第二次注入用精简表头(省 token)", async () =>
 	});
 });
 
-test("核心层噪声过滤:任何 harness 走 buildBrief 都会被拦", () => {
-	// 噪声:标题不再是"任务出错",严重度回到 info
-	const noise = buildBrief(snapshot({ errorText: "[rtk] /!\ No hook installed — run rtk init -g" }));
-	assert.equal(noise.severity, "info", "噪声不产生 err");
-	assert.ok(!noise.title.startsWith("任务出错"), `噪声不应是错误标题:${noise.title}`);
-	assert.equal(noise.kind, "change", "降级为普通变更");
 
-	// 工具级:降 warn
-	const tool = buildBrief(snapshot({ errorText: "ENOENT: no such file or directory, open F:/x.txt" }));
-	assert.equal(tool.severity, "warn", "工具级失败降 warn");
-	assert.ok(tool.title.startsWith("工具失败"), tool.title);
-
-	// 任务级:保持 err
-	const task = buildBrief(snapshot({ errorText: "npm ERR! code ELIFECYCLE 构建失败" }));
-	assert.equal(task.severity, "err");
-	assert.ok(task.title.startsWith("任务出错"), task.title);
-});
-
-test("shouldPublish:没内容不投,噪声不算内容", async () => {
-	const { shouldPublish } = await import("../src/brief.ts");
-	assert.equal(shouldPublish(snapshot({ changedPaths: [], commands: [] })), false, "空快照不投");
-	assert.equal(shouldPublish(snapshot({ changedPaths: [], commands: [], errorText: "[object Object]" })), false, "噪声不投");
-	assert.equal(shouldPublish(snapshot({ changedPaths: [], commands: [], errorText: "npm ERR! 失败" })), true, "任务级失败要投");
-	assert.equal(shouldPublish(snapshot()), true, "有改动就投");
-});

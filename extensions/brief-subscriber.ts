@@ -136,7 +136,7 @@ export default async function (pi: any): Promise<void> {
 	// 让 pi 加载扩展直接失败)——因此包一层 IIFE 异步注册。
 	void (async () => {
 		try {
-			const mod = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "brief-hub-cmd.ts")).href);
+			const mod = await import(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "brief-hub", "cmd.ts")).href);
 			mod.registerHubCommand(pi, { load, meta, STATUS_KEY });
 		} catch (error) {
 			pi.ui?.notify?.(`brief-hub: /hub 命令未注册(${error instanceof Error ? error.message : String(error)})`, "warning");
