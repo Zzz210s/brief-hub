@@ -82,6 +82,20 @@ export function shouldPublish(snapshot: SessionSnapshot & { title?: string }): b
 	return klass === "task" || klass === "tool";
 }
 
+/** 改动路径的最长公共目录(去掉末段文件名)——即"被改动的那个文件夹" */
+export function changeScope(paths: string[]): string | undefined {
+	if (!paths?.length) return undefined;
+	const segs = paths.map((p) => p.replace(/\\/g, "/").split("/").filter(Boolean));
+	const common: string[] = [];
+	for (let i = 0; ; i++) {
+		const head = segs[0][i];
+		if (!head || !segs.every((seg) => seg[i] === head)) break;
+		common.push(head);
+	}
+	if (common.length === 0) return undefined;
+	return common.length > 1 ? common.slice(0, -1).join("/") : common[0];
+}
+
 export function buildBrief(snapshot: SessionSnapshot, options: { now?: number; id?: string } = {}): Brief {
 	const now = options.now ?? Date.now();
 	// 噪声过滤放在核心层:pi 扩展 / Claude hook / Codex notify / opencode 插件 / bh publish
@@ -91,13 +105,15 @@ export function buildBrief(snapshot: SessionSnapshot, options: { now?: number; i
 	const warnOnly = klass === "tool";
 	const effectiveError = dropped ? undefined : snapshot.errorText;
 	const failed = Boolean(effectiveError);
-	const kind: Kind = failed ? "task.error" : snapshot.git?.pushed ? "git.push" : "task.done";
+	const scope = changeScope(snapshot.changedPaths ?? []);
+	// 只投一种简报:变更简报(触发条件=某个文件夹被改动,见投稿器)
+	const kind: Kind = "change";
 	// 工具级失败降为 warn:不占接收端的"必须处理"配额
 	const severity: Severity = failed ? (warnOnly ? "warn" : "err") : "info";
 
 	const title = failed
 		? clamp(`${warnOnly ? "工具失败" : "任务出错"}: ${effectiveError ?? ""}`, MAX_TITLE)
-		: clamp(buildTitle(snapshot), MAX_TITLE);
+		: clamp(scope ? `变更 ${scope} · ${(snapshot.changedPaths ?? []).length} 个文件${snapshot.git?.pushed ? " · 已推送" : ""}` : buildTitle(snapshot), MAX_TITLE);
 
 	const facts = failed ? buildErrorFacts({ ...snapshot, errorText: effectiveError }) : buildDoneFacts(snapshot);
 	const tags = deriveTags({
@@ -110,6 +126,8 @@ export function buildBrief(snapshot: SessionSnapshot, options: { now?: number; i
 		severity,
 		kind,
 	});
+
+	if (scope) tags.push(`dir:${scope}`); // 支持按文件夹订阅
 
 	return {
 		id: options.id ?? makeId(new Date(now)),

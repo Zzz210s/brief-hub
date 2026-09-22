@@ -33,7 +33,7 @@ const snapshot = (overrides = {}) => ({
 
 test("buildBrief:推送场景生成 git.push 简报与相关标签,且不调用模型", () => {
 	const brief = buildBrief(snapshot({ git: { pushed: true, summary: "3 个提交" } }), { now: 1_700_000_000_000, id: "b-test-0001" });
-	assert.equal(brief.kind, "git.push");
+	assert.equal(brief.kind, "change", "现在统一为变更简报");
 	assert.match(brief.title, /推送/);
 	assert.ok(brief.tags.includes("git.push"));
 	assert.ok(brief.tags.includes("repo:Zzz210s/config-ai"));
@@ -44,7 +44,7 @@ test("buildBrief:推送场景生成 git.push 简报与相关标签,且不调用�
 
 test("buildBrief:出错场景生成 task.error(高优先级)", () => {
 	const brief = buildBrief(snapshot({ errorText: "pnpm ERR_PNPM_GLOBAL_BIN_DIR_NOT_IN_PATH", commands: ["pnpm install -g pi"] }));
-	assert.equal(brief.kind, "task.error");
+	assert.equal(brief.kind, "change");
 	assert.equal(brief.severity, "err");
 	assert.ok(brief.tags.includes("sev:err"));
 });
@@ -170,7 +170,7 @@ test("核心层噪声过滤:任何 harness 走 buildBrief 都会被拦", () => {
 	const noise = buildBrief(snapshot({ errorText: "[rtk] /!\ No hook installed — run rtk init -g" }));
 	assert.equal(noise.severity, "info", "噪声不产生 err");
 	assert.ok(!noise.title.startsWith("任务出错"), `噪声不应是错误标题:${noise.title}`);
-	assert.equal(noise.kind, "task.done", "降级为普通完成");
+	assert.equal(noise.kind, "change", "降级为普通变更");
 
 	// 工具级:降 warn
 	const tool = buildBrief(snapshot({ errorText: "ENOENT: no such file or directory, open F:/x.txt" }));

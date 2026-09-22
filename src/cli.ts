@@ -17,6 +17,7 @@
 import { readFile } from "node:fs/promises";
 import { doctorRows, formatDoctor, markHandling, one, orphansFor, parseArgs, pendingFor, pendingIds, publishFromTranscript, purgeBriefs, readAllBriefs } from "./cli-support.ts";
 import { filterFromArgs } from "./purge.ts";
+import { cmdList, cmdRead, cmdTag } from "./cli-commands.ts";
 import { buildBrief, clamp } from "./brief.ts";
 import { defaultSub, pollOnce } from "./inbox.ts";
 import { renderBrief } from "./match.ts";
@@ -75,43 +76,10 @@ async function run(): Promise<void> {
 			else console.log(`(无投递: ${result.reason ?? "无新简报"})`);
 			return;
 		}
-		case "list": {
-			const files = await listBriefFiles(7);
-			let briefs = await readAllBriefs(files);
-			const state = sess ? await readState(sess) : undefined;
-			if (args.bool.has("unread")) {
-				const unread = new Set(state?.unread ?? []);
-				briefs = briefs.filter((brief) => unread.has(brief.id));
-			}
-			const limit = Number(one(args.flags, "limit") ?? 20);
-			const sliced = briefs.slice(0, limit);
-			if (args.bool.has("json")) {
-				console.log(JSON.stringify(sliced, null, "\t"));
-				return;
-			}
-			if (!sliced.length) {
-				console.log("(无简报)");
-				return;
-			}
-			for (const brief of sliced) {
-				const mark = state?.consumed?.includes(brief.id) ? "已读" : "未读";
-				console.log(`${mark} ${brief.id}  [${brief.kind}] ${brief.title}  (${brief.tags.filter((tag) => !tag.startsWith("tool:")).slice(0, 3).join(",")})`);
-			}
-			return;
-		}
-		case "read": {
-			const id = args.rest[0];
-			if (!id) throw new Error("用法: bh read <id>");
-			const files = await listBriefFiles(7);
-			const brief = (await readAllBriefs(files)).find((item) => item.id === id);
-			if (!brief) throw new Error(`未找到简报 ${id}`);
-			console.log(args.bool.has("json") ? JSON.stringify(brief, null, "\t") : renderBrief(brief));
-			if (sess) {
-				const state = await readState(sess);
-				await writeState(sess, markConsumed(state, [brief.id]));
-			}
-			return;
-		}
+		case "list":
+			return await cmdList(args, sess);
+		case "read":
+			return await cmdRead(args, sess);
 		case "sub": {
 			const action = args.rest[0];
 			if (!sess) throw new Error("sub 需要 --sess <会话>");
@@ -145,18 +113,8 @@ async function run(): Promise<void> {
 			}
 			throw new Error("用法: bh sub add|list|rm ...");
 		}
-		case "tag": {
-			const tags = deriveTags({
-				tool: one(args.flags, "tool") ?? "pi",
-				sessionName: one(args.flags, "name") ?? "",
-				cwd: one(args.flags, "cwd") ?? process.cwd(),
-				repo: one(args.flags, "repo"),
-				changedPaths: args.flags.changed ?? [],
-				commands: args.rest,
-			});
-			console.log(tags.join(" "));
-			return;
-		}
+		case "tag":
+			return await cmdTag(args, sess);
 		case "digest": {
 			if (!sess) throw new Error("digest 需要 --sess <会话>");
 			const result = await pollOnce(sess, { force: args.bool.has("force") });

@@ -5,7 +5,9 @@
  * 正文细节靠 artifacts 按需展开。这样消费者只付"标题"的钱,需要时才读正文。
  */
 
-export type Kind = "task.done" | "task.error" | "git.push" | "git.commit" | "config.changed" | "note";
+export type Kind = "change" | "task.done" | "task.error" | "git.push" | "git.commit" | "config.changed" | "note";
+/** 现在只投一种简报:变更简报(其余取值仅为读历史数据保留) */
+export const CURRENT_KIND: Kind = "change";
 export type Severity = "err" | "warn" | "info";
 
 /** 一条简报(集散地的存储单元) */

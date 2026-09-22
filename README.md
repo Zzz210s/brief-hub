@@ -19,6 +19,14 @@ session B (subscribed) ──► pure-code tag match ──► title digest inje
                                                           └─ next poll: never detected again
 ```
 
+## One kind: the change brief
+
+There is a single brief kind, `change`. It is published when a session **modified files in a folder** (or when a task-level failure occurred) — running commands alone no longer produces a brief.
+
+- Title: `change <folder> · N files` (+ `· pushed` when the change was pushed)
+- Tag: `dir:<folder>` — subscribe to a folder, e.g. `bh sub add dir:src --sess=<id>`
+- Severity still separates signal: `info` (normal change), `warn` (tool-level failure), `err` (task-level failure)
+
 ## Noise control
 
 The failure mode of any notification system is that noise crowds out signal. Three gates, all in the core so **every harness inherits them**:
@@ -129,7 +137,7 @@ bh purge --kind task.error --before 2026-09-22 --yes
 | Project | `proj:<dir>` | working directory name |
 | Tool / session | `tool:pi`, `sess:<name>` | session metadata |
 | Severity | `sev:err`, `sev:warn`, `sev:info` | error classification |
-| Kind | `task.done`, `task.error`, `git.push` | event type |
+| Kind | `change` (single kind) | folder change |
 
 Subscribing to a parent matches its children: `git` also receives `git.push` / `git.commit`.
 
