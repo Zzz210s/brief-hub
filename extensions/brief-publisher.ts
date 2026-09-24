@@ -83,8 +83,20 @@ export default function (pi: any): void {
 				brief.title = core.clamp(`工具失败: ${warnError}`, 60);
 			}
 			await core.appendBrief(brief);
-		} catch {
-			/* 投稿失败绝不影响会话 */
+		} catch (error) {
+			// 投稿失败绝不影响会话,但要留痕:静默失败会让"brief-hub 不工作"无从排查
+			try {
+				const { appendFileSync, mkdirSync } = await import("node:fs");
+				const logDir = join(homedir(), ".ai-brief-hub");
+				mkdirSync(logDir, { recursive: true });
+				const detail = String((error as { stack?: unknown })?.stack ?? error)
+					.split("\n")
+					.slice(0, 3)
+					.join(" | ");
+				appendFileSync(join(logDir, "publisher.log"), `${new Date().toISOString()}\t${detail}\n`);
+			} catch {
+				/* 连日志都写不了就只能放弃 */
+			}
 		} finally {
 			resetWork();
 		}
@@ -107,18 +119,33 @@ export default function (pi: any): void {
 		if (event?.name) meta.name = event.name;
 	});
 
+	// pi 0.87+:tool_execution_end 只带 {toolCallId,toolName,result,isError},**没有 args**;
+	// 工具入参只在 tool_execution_start/update 上。因此变更/命令采集必须挂在 start 上,
+	// 否则 changed 永远为空 -> 一条简报都投不出去(2026-09-24 定位)。
+	const trackToolInput = (event: any): void => {
+		const name = String(event?.toolName ?? event?.name ?? "");
+		const input = event?.input ?? event?.args ?? {};
+		if (WRITE_TOOLS.has(name)) {
+			const path = input.file_path ?? input.path ?? input.filePath ?? input.filename;
+			if (typeof path === "string" && changed.size < MAX_TRACKED) changed.add(path);
+		}
+		if (name === "bash" || name === "shell" || name === "run_command") {
+			const command = input.command ?? input.cmd ?? input.script;
+			if (typeof command === "string") commands.push(command.replace(/\s+/g, " ").slice(0, 120));
+		}
+	};
+
+	pi.on("tool_execution_start", async (event: any) => {
+		try {
+			trackToolInput(event);
+		} catch {
+			/* 忽略采集异常 */
+		}
+	});
+
 	pi.on("tool_execution_end", async (event: any) => {
 		try {
-			const name = String(event?.toolName ?? event?.name ?? "");
-			const input = event?.input ?? event?.args ?? {};
-			if (WRITE_TOOLS.has(name)) {
-				const path = input.file_path ?? input.path ?? input.filePath ?? input.filename;
-				if (typeof path === "string" && changed.size < MAX_TRACKED) changed.add(path);
-			}
-			if (name === "bash" || name === "shell" || name === "run_command") {
-				const command = input.command ?? input.cmd ?? input.script;
-				if (typeof command === "string") commands.push(command.replace(/\s+/g, " ").slice(0, 120));
-			}
+			trackToolInput(event); // 兼容旧版仍带 args 的情况(Set/数组均幂等)
 			const failed = event?.isError ?? event?.error ?? event?.result?.isError;
 			if (failed) {
 				// 统一提取(对象/数组/工具结果包装)+ 分类:瞬时噪声不广播(P0)
