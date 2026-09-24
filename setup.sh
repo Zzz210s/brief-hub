@@ -36,16 +36,32 @@ wired=0
 # 3.1 pi
 if [ -d "$AGENT_DIR" ]; then
   mkdir -p "$AGENT_DIR/extensions"
-  # 通配复制:以后拆分/新增扩展文件不必再改这里(硬编码清单曾导致"缺模块 -> pi 启动失败")
-  rm -f "$AGENT_DIR/extensions/brief-hub-cmd.ts"   # 旧位置残留(根级会被当扩展加载)
-  mkdir -p "$AGENT_DIR/extensions/brief-hub"
-  cp -f "$REPO_DIR"/extensions/brief-hub/*.ts "$AGENT_DIR/extensions/brief-hub/" 2>/dev/null || true
-  for f in "$REPO_DIR"/extensions/*.ts; do
-    cp -f "$f" "$AGENT_DIR/extensions/$(basename "$f")" && wired=$((wired+1))
-  done
-  # 部署后自检:确认相对导入都能解析(缺模块会让 pi 启动失败)
-  [ -f "$REPO_DIR/scripts/check-extensions.mjs" ] && node "$REPO_DIR/scripts/check-extensions.mjs" "$AGENT_DIR/extensions" | sed 's/^/  [ext] /' 
-  log "pi: 已安装投稿器 + 订阅器扩展(重启 pi 或 /reload 生效)"
+  # 先部署到暂存目录并自检(语法 + 相对导入),只有自检通过才落盘 ——
+  # 一个语法错就会让 pi 启动时报 "Failed to load extension",影响所有会话(2026-09-24 踩过)。
+  STAGE="$AGENT_DIR/extensions/.staging-brief-hub-$$"
+  rm -rf "$STAGE"; mkdir -p "$STAGE/brief-hub"
+  cp -f "$REPO_DIR"/extensions/brief-hub/*.ts "$STAGE/brief-hub/" 2>/dev/null || true
+  cp -f "$REPO_DIR"/extensions/*.ts "$STAGE/" 2>/dev/null || true
+  if [ -f "$REPO_DIR/scripts/check-extensions.mjs" ]; then
+    __out="$(node "$REPO_DIR/scripts/check-extensions.mjs" "$STAGE" 2>&1)"; __rc=$?
+  else
+    __out=""; __rc=0
+  fi
+  if [ "$__rc" != "0" ]; then
+    warn "扩展自检未通过,已放弃本次部署(保留上一版,避免 pi 启动失败)"
+    printf '%s\n' "$__out" | sed 's/^/  [ext] /'
+    rm -rf "$STAGE"
+  else
+    rm -f "$AGENT_DIR/extensions/brief-hub-cmd.ts"   # 旧位置残留(根级会被当扩展加载)
+    mkdir -p "$AGENT_DIR/extensions/brief-hub"
+    cp -f "$STAGE"/brief-hub/*.ts "$AGENT_DIR/extensions/brief-hub/" 2>/dev/null || true
+    for f in "$STAGE"/*.ts; do
+      cp -f "$f" "$AGENT_DIR/extensions/$(basename "$f")" && wired=$((wired+1))
+    done
+    rm -rf "$STAGE"
+    [ -f "$REPO_DIR/scripts/check-extensions.mjs" ] && node "$REPO_DIR/scripts/check-extensions.mjs" "$AGENT_DIR/extensions" | sed 's/^/  [ext] /'
+    log "pi: 已安装投稿器 + 订阅器扩展(重启 pi 或 /reload 生效)"
+  fi
 else
   log "pi: 未检测到 $AGENT_DIR,跳过(不影响 CLI)"
 fi
